@@ -32,6 +32,14 @@ public class ServerConfig {
     private static final ModConfigSpec.IntValue PORT = BUILDER
             .comment("----IMPORTANT!!! Needs to restart!!!----\nThe port of the file server, default is 25564.").defineInRange("port", 25564, 1, 65535);
 
+    private static final ModConfigSpec.IntValue MAX_THREADS = BUILDER
+            .comment("----IMPORTANT!!! Needs to restart!!!----\n"
+                    + "Max concurrent handler threads of the built-in file server.\n"
+                    + "Every in-flight file download occupies one thread, so keep it >= "
+                    + "(client 'download_connections' × expected concurrent updating players).\n"
+                    + "With the client default of 8 connections, 32 threads means 4 players can update at the same time.")
+            .defineInRange("max_threads", 32, 4, 256);
+
     // a list of strings that are treated as sync directories
     private static final ModConfigSpec.ConfigValue<List<? extends String>> SYNC_DIR = BUILDER
             .comment(
@@ -55,6 +63,9 @@ public class ServerConfig {
     public static String update_time;
 
     public static int port;
+
+    /** 文件服务器线程池大小，见 max_threads 配置项 */
+    public static int maxThreads = 32;
 
     private static boolean validateKeyMap(final Object obj) {
         if (obj instanceof String path && path.split(":").length >= 2) {
@@ -81,9 +92,14 @@ public class ServerConfig {
                 .collect(Collectors.toList());
     }
 
+    public static int getMaxThreads() {
+        return maxThreads;
+    }
+
     @SubscribeEvent
     public static void onLoad(final ModConfigEvent.Loading event) {
         port = PORT.get();
+        maxThreads = MAX_THREADS.get();
         SakuraUpdaterServer.getInstance().runServer();
     }
 
