@@ -21,26 +21,49 @@ SakuraUpdater is a NeoForge Minecraft mod that enables automatic synchronization
 - [x] 🎮 Graphical update UI
 - [x] ⚙️ Configurable client and server settings
 - [x] 🚀 The server can run independently
+- [x] 📦 Separate client / server / standalone jars (the client jar is only ~0.5 MB)
+
+## Which file should I download?
+
+Every release ships three jars — pick the one that matches your role:
+
+| File | Size | Use it for | Bundles SQLite? |
+| --- | --- | --- | --- |
+| `sakuraupdater-<version>-<mc>-client.jar` | ~0.5 MB | Players' clients | No |
+| `sakuraupdater-<version>-<mc>-server.jar` | ~14 MB | Dedicated servers (it also contains everything a client needs) | Yes |
+| `sakuraupdater-<version>-<mc>-standalone.jar` | ~14 MB | Running the updater standalone with `java -jar` | Yes, bundled inside |
+
+The `-client` jar is the slim one: a client never touches the update database, so it does not need SQLite.
+**Do not put `-client` on a dedicated server** — the server needs SQLite and will log an error telling you to use `-server` instead.
 
 ## Installation
 
 ### Server-side installation
 
-1. Place `sakuraupdater-[version].jar` into the server's `mods` folder.
+1. Place `sakuraupdater-[version]-server.jar` into the server's `mods` folder.
 2. Start the server. Configuration files will be generated on first run.
 3. Edit the server configuration file at `config/sakuraupdater-server.toml`.
 
 ### Client-side installation
 
-1. Place `sakuraupdater-[version].jar` into the client's `mods` folder.
+1. Place `sakuraupdater-[version]-client.jar` into the client's `mods` folder.
 2. Start the game. Configuration files will be generated on first run.
 3. Edit the client configuration file at `config/sakuraupdater-client.toml`.
 
 ### Server-side independent operation
 
-1. Place `sakuraupdater-[version].jar` into a separate folder.
-2. Run the server independently with `java -jar sakuraupdater-[version].jar`.
+1. Place `sakuraupdater-[version]-standalone.jar` into a separate folder.
+2. Run the server independently with `java -jar sakuraupdater-[version]-standalone.jar`.
 3. Edit the client configuration file at `sakuraupdater-client.toml`.
+
+> The standalone jar carries its own dependencies (Gson, NightConfig, SLF4J, SQLite) under `standaloneLibs/` and unpacks them into a `lib/` folder next to the jar on first run. The `-client` and `-server` jars cannot be started this way.
+
+### Upgrading from older versions
+
+Older releases shipped everything as a single `sakuraupdater-[version].jar`. To upgrade:
+
+1. Delete the old jar and put the `-client` / `-server` jar for your role in its place.
+2. If that jar is also the one your server pushes to players, keep the `-client` jar in the folder your `SYNC_DIR` reads from (see the tips under Configuration) and run `/sakuraupdater commit <version> <description>` once more, so the file list points at the new file name. In `mirror` mode the old file is then removed from clients automatically.
 
 ## Configuration
 
@@ -63,6 +86,26 @@ SYNC_DIR = [
     "mods:ignore:.*abc\.jar$"                # ignore files in mods ending with 'abc.jar'
 ]
 ```
+
+> **Mind the updater jar itself.** Everything in the sync *source* is pushed to every client — including the updater jar. Since the client jar is much smaller than the server one, keep them apart:
+>
+> ```toml
+> # Recommended: the server keeps its own -server.jar in mods/,
+> # and players receive the slim -client.jar from a separate folder.
+> SYNC_DIR = [
+>     "mods:mirror:clientmods",   # sync clientmods/ (holds the -client jar) to the client's mods/
+>     "config:push:clientconfig:config"
+> ]
+> ```
+>
+> Or, if you prefer a single folder, exclude the updater by name and let each side keep its own jar:
+>
+> ```toml
+> SYNC_DIR = [
+>     "mods:mirror",
+>     "mods:ignore:.*sakuraupdater.*\.jar$"
+> ]
+> ```
 
 ### Client configuration (`sakuraupdater-client.toml`)
 
@@ -138,26 +181,49 @@ SakuraUpdater 是一个 Minecraft NeoForge 模组，用于自动更新服务器�
 - [x] 🎮 图形化更新界面
 - [x] ⚙️ 可配置的客户端和服务器设置
 - [x] 🚀 服务端可独立运行
+- [x] 📦 客户端 / 服务端 / 独立模式分包发布（客户端包仅 ~0.5 MB）
+
+## 该下载哪个包？
+
+每个 Release 会发三个包，按角色选一个：
+
+| 文件 | 大小 | 用途 | 是否自带 SQLite |
+| --- | --- | --- | --- |
+| `sakuraupdater-<版本>-<MC版本>-client.jar` | ~0.5 MB | 玩家客户端 | 不含 |
+| `sakuraupdater-<版本>-<MC版本>-server.jar` | ~14 MB | 专用服务端（也包含客户端所需的全部内容） | 含 |
+| `sakuraupdater-<版本>-<MC版本>-standalone.jar` | ~14 MB | `java -jar` 独立运行 | 内含，无需额外安装 |
+
+`-client` 是瘦包：客户端进程从不访问更新数据库，所以不需要 SQLite。
+**不要把 `-client` 放到专用服务端**——服务端需要 SQLite，启动时会打日志提示你改用 `-server`。
 
 ## 安装步骤
 
 ### 服务器端安装
 
-1. 将 `sakuraupdater-[version].jar` 放入服务器的 `mods` 文件夹。
+1. 将 `sakuraupdater-[version]-server.jar` 放入服务器的 `mods` 文件夹。
 2. 启动服务器，首次运行会生成配置文件。
 3. 编辑 `config/sakuraupdater-server.toml` 配置文件。
 
 ### 客户端安装
 
-1. 将 `sakuraupdater-[version].jar` 放入客户端的 `mods` 文件夹。
+1. 将 `sakuraupdater-[version]-client.jar` 放入客户端的 `mods` 文件夹。
 2. 启动游戏，首次运行会生成配置文件。
 3. 编辑 `config/sakuraupdater-client.toml` 配置文件。
 
 ### 服务端独立运行
 
-1. 将 `sakuraupdater-[version].jar` 放入单独文件夹。
-2. 直接 `java -jar sakuraupdater-[version].jar` 即可运行服务端。
+1. 将 `sakuraupdater-[version]-standalone.jar` 放入单独文件夹。
+2. 直接 `java -jar sakuraupdater-[version]-standalone.jar` 即可运行服务端。
 3. 编辑 `sakuraupdater-client.toml` 配置文件。
+
+> 独立模式包自带依赖（Gson、NightConfig、SLF4J、SQLite），放在包内 `standaloneLibs/` 目录，首次运行会解压到 jar 旁边的 `lib/` 文件夹。`-client` 和 `-server` 包不能用这种方式启动。
+
+### 从旧版升级
+
+旧版本所有功能都打在同一个 `sakuraupdater-[version].jar` 里。升级步骤：
+
+1. 删掉旧包，换成对应角色的 `-client` / `-server` 包。
+2. 如果这个包同时是要推给玩家的那个，把 `-client` 包放在 `SYNC_DIR` 读取的目录里（见下方配置说明），并重新执行一次 `/sakuraupdater commit <版本号> <描述>`，让文件清单指向新文件名。`mirror` 模式下旧文件名会自动从客户端删除。
 
 ## 配置说明
 
@@ -180,6 +246,26 @@ SYNC_DIR = [
     "mods:ignore:.*abc\.jar$"                # 忽略以 abc.jar 结尾的文件
 ]
 ```
+
+> **注意更新器自己这个包。** 同步**源**目录里的所有东西都会被推给每个客户端——包括更新器 jar。客户端包比服务端包小得多，建议把两者分开：
+>
+> ```toml
+> # 推荐：服务端自己的 mods/ 里放 -server.jar，
+> # 玩家从单独的目录拿瘦包 -client.jar。
+> SYNC_DIR = [
+>     "mods:mirror:clientmods",   # 把 clientmods/（放 -client 包）同步到客户端的 mods/
+>     "config:push:clientconfig:config"
+> ]
+> ```
+>
+> 或者仍然只用一个目录，但把更新器排除掉，让两侧各留自己的包：
+>
+> ```toml
+> SYNC_DIR = [
+>     "mods:mirror",
+>     "mods:ignore:.*sakuraupdater.*\.jar$"
+> ]
+> ```
 
 ### 客户端配置 (`sakuraupdater-client.toml`)
 
