@@ -42,12 +42,42 @@ public class ServerCommandsHelper {
 
     // ---- data edit ----
     public static CommandResult editData(String version, String description) {
-        String timestamp = LocalDateTime.now()
-                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH:mm:ss"));
-        if (!DataConfig.editData(version, timestamp, description, null)) {
-            return CommandResult.failure("Failed to add data: Version not already exists or invalid data.");
+        if (!DataConfig.editData(version, description)) {
+            return CommandResult.failure("Failed to edit data: version not found.");
         }
-        return CommandResult.success("SakuraUpdater server data edit completed!");
+        return CommandResult.success("SakuraUpdater updated the description of version " + version
+                + " (file list and time are left untouched).");
+    }
+
+    // ---- data repair ----
+    /**
+     * 重建某个版本的文件清单：重新扫描同步目录，把清单写回该版本，描述与 time 保持不变（不会打乱更新日志顺序）。
+     * 用法场景：被旧版 data edit 清空过清单的版本，或该版本当时没能正确 commit。
+     * 注意：重建的是"当前"同步目录的快照，不是该版本当时的快照。
+     */
+    public static CommandResult repairData(String version) {
+        DataConfig.Data data = DataConfig.getDataByVersion(version);
+        if (data == null) {
+            return CommandResult.failure("Data with version " + version + " not found.");
+        }
+        List<PathData> pathData;
+        try {
+            pathData = getPathDataList();
+        } catch (Throwable t) {
+            // 这里连 Error 一起接（例如独立/模组环境混用时缺类的 NoClassDefFoundError），
+            // 与 FileServer 读取线程池配置时的处理保持一致：给一条明确失败而不是把命令打崩
+            return CommandResult.failure("Failed to scan sync directories: " + t);
+        }
+        if (pathData.isEmpty()) {
+            return CommandResult.failure("Nothing to repair: the sync directories are empty, please check SYNC_DIR.");
+        }
+        if (!DataConfig.updateFiles(version, pathData)) {
+            return CommandResult.failure("Failed to write the rebuilt file list back to version " + version + ".");
+        }
+        int fileCount = pathData.stream().mapToInt(p -> p.files == null ? 0 : p.files.size()).sum();
+        return CommandResult.success("SakuraUpdater repaired version " + version + ": rebuilt " + pathData.size()
+                + " path(s) / " + fileCount + " file(s) from the current sync directories. "
+                + "Description and time were left untouched.");
     }
 
     // ---- data list ----
@@ -55,9 +85,15 @@ public class ServerCommandsHelper {
         StringBuilder dataList = new StringBuilder("SakuraUpdater server data:\n");
         DataConfig.getAllVersions().forEach(version -> {
             DataConfig.Data data = DataConfig.getDataByVersion(version);
+            if (data == null) {
+                dataList.append("Version: ").append(version).append(", <failed to read this record>\n");
+                return;
+            }
+            boolean noFileList = data.paths == null || data.paths.isEmpty();
             dataList.append("Version: ").append(version)
                     .append(", Time: ").append(data.time)
                     .append(", Description: ").append(data.description)
+                    .append(noFileList ? ", <empty file list, run 'data repair " + version + "'>" : "")
                     .append("\n");
         });
         return CommandResult.success(dataList.toString());
@@ -68,6 +104,11 @@ public class ServerCommandsHelper {
         DataConfig.Data data = DataConfig.getDataByVersion(version);
         if (data == null) {
             return CommandResult.failure("Data with version " + version + " not found.");
+        }
+        if (data.paths == null || data.paths.isEmpty()) {
+            return CommandResult.failure("Version " + version + " has an empty file list in the database "
+                    + "(it was probably wiped by the old 'data edit' bug, or this version was never committed "
+                    + "with a valid SYNC_DIR). Run 'data repair " + version + "' on the server to rebuild it.");
         }
         StringBuilder dataList = new StringBuilder("SakuraUpdater server data:\n");
         for (PathData path : data.paths) {
@@ -108,11 +149,19 @@ public class ServerCommandsHelper {
 
     // ---- commit ----
     public static CommandResult commitData(String version, String description) {
-        try{
-            return commitData(version, description, getPathDataList());
-        } catch (Exception e) {
-            return CommandResult.failure("Failed to commit data: " + e.getMessage());
+        List<PathData> pathData;
+        try {
+            pathData = getPathDataList();
+        } catch (Throwable t) {
+            return CommandResult.failure("Failed to scan sync directories: " + t);
         }
+        if (pathData.isEmpty()) {
+            // 空清单的版本会让客户端"什么都没得下"就直接把版本号推进到最新
+            return CommandResult.failure("Nothing to commit: the sync directories are empty. "
+                    + "Please check SYNC_DIR before committing, otherwise clients would treat this version "
+                    + "as 'nothing to sync' and skip the update.");
+        }
+        return commitData(version, description, pathData);
     }
     public static CommandResult commitData(String version, String description, List<PathData> pathData) {
         String timestamp = LocalDateTime.now()
