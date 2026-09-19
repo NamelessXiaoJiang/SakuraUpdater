@@ -1,15 +1,18 @@
 package fun.sakuraspark.sakuraupdater.config;
 
+import java.io.IOException;
 import java.sql.Connection;
-import java.sql.DriverManager;
+import java.sql.Driver;
+import java.sql.SQLException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Properties;
 
 import javax.annotation.Nullable;
 
-import org.sqlite.JDBC; // 为了让 ShadowJar 能够正确重定位，需要显式引用该类
+import fun.sakuraspark.sakuraupdater.PackageManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,18 +39,30 @@ public class DataConfig {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataConfig.class);
 
     private static Connection connection = null;
+    private static Driver sqliteDriver;
+
+    /** 数据库层负责驱动实例化与连接创建，包管理器仅提供依赖的类加载器。 */
+    private static synchronized Connection openSqliteConnection(String database) throws IOException, SQLException {
+        if (sqliteDriver == null) {
+            ClassLoader loader = PackageManager.loadDependency("org.xerial", "sqlite-jdbc");
+            try {
+                sqliteDriver = (Driver) Class.forName("org.sqlite.JDBC", true, loader).getConstructor().newInstance();
+            } catch (ReflectiveOperationException | LinkageError e) {
+                throw new SQLException("Cannot load SQLite JDBC driver", e);
+            }
+        }
+        // 直接调用驱动，避免 DriverManager 按调用方类加载器过滤动态加载的驱动。
+        Connection result = sqliteDriver.connect("jdbc:sqlite:" + database, new Properties());
+        if (result == null) throw new SQLException("SQLite driver rejected database " + database);
+        return result;
+    }
 
     /**
      * 连接到SQLite数据库
      */
     public static boolean connectToDatabase(String dburl){
         try {
-            // 显式加载驱动类，确保 JDBC 驱动已注册
-            // 这里的 String 会被 ShadowJar 插件忽略，导致重定位后无法找到类
-            // 改用 .class 引用，ShadowJar 会自动处理重定位后的包名
-            Class.forName("org.sqlite.JDBC");
-
-            connection = DriverManager.getConnection("jdbc:sqlite:" + dburl);
+            connection = openSqliteConnection(dburl);
             try (Statement stmt = connection.createStatement()) {
                 // 当表不存在时创建表
                 String sql = "CREATE TABLE IF NOT EXISTS updates (" +
@@ -58,7 +73,10 @@ public class DataConfig {
                 stmt.execute(sql);
                 stmt.close();
             }
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
+            LOGGER.error("Failed to initialize SQLite database {}", dburl, e);
+            closeDatabase();
+            connection = null;
             return false;
         }
         return true;

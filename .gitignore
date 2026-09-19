@@ -32,3 +32,6 @@ build
 repo
 .VSCodeCounter
 /branches
+
+# 下载的运行时依赖
+/lib/

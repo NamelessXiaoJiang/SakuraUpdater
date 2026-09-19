@@ -40,7 +40,28 @@ SakuraUpdater is a NeoForge Minecraft mod that enables automatic synchronization
 
 1. Place `sakuraupdater-[version].jar` into a separate folder.
 2. Run the server independently with `java -jar sakuraupdater-[version].jar`.
-3. Edit the client configuration file at `sakuraupdater-client.toml`.
+3. Edit the standalone server configuration file at `sakuraupdater-common.toml`.
+
+### Runtime dependencies
+
+The same JAR supports NeoForge and `java -jar` standalone operation. Dependencies are no longer bundled. Standalone startup obtains SQLite JDBC 3.46.0.0, Gson 2.10, NightConfig core/toml 3.8.1, and SLF4J api/simple 2.0.9. NeoForge servers only obtain SQLite when opening the database; ordinary clients do not download these libraries.
+
+First startup needs internet access: downloads try Aliyun Central (`https://maven.aliyun.com/repository/central/`) first, then Maven Central (`https://repo.maven.apache.org/maven2/`). Files are cached in `lib/` relative to the process working directory. Every file is checked against a pinned SHA-256 before use; valid caches work offline and are not downloaded again.
+
+To override the download source, set `SAKURAUPDATER_MAVEN_REPO` to an HTTP(S) Maven repository root before starting Java. For example, in PowerShell:
+
+```powershell
+$env:SAKURAUPDATER_MAVEN_REPO = "https://maven.aliyun.com/repository/central/"
+java -jar sakuraupdater-[version].jar
+```
+
+A nonblank value **replaces both default sources**; if it fails, no public-source fallback is attempted. Unset or blank values retain the default Aliyun → Maven Central order. A trailing slash is optional. The URL must not include credentials, query parameters, or a fragment. This applies to standalone and NeoForge processes; restart the process after changing the variable. SHA-256 checks still apply to custom sources.
+
+Without internet, complete valid caches allow normal startup with no network requests. Missing or corrupt required files trigger a download attempt; if every configured source fails, startup stops at that dependency. Each source is attempted once, with a 10-second connection timeout and a 60-second read timeout (these are not an overall startup deadline). Standalone startup exits with code 1; a NeoForge server reports a mod initialization error and cannot finish startup. Existing database files are not deleted. Ordinary clients do not require these downloads. An accessible LAN Maven repository can also supply missing files without public internet access.
+
+For offline setup, copy the required versioned JAR files into `lib/` from a previously successful installation. Keep the exact filenames (for example, `sqlite-jdbc-3.46.0.0.jar`); standalone mode needs all six files. Existing valid `lib/` files from older releases can be reused. Lock files may remain and should not be removed while the application is running.
+
+If acquisition fails, the log names the library, attempted URLs, and causes. Check network access and write permissions for `lib/`, or prepopulate verified files, then restart. Corrupt files are replaced only after a complete, verified download. A missing dependency or database initialization failure stops server startup. JARs are loaded directly; SQLite extracts its platform native library automatically, so its JVM temporary directory must be writable.
 
 ## Configuration
 
@@ -162,7 +183,28 @@ SakuraUpdater 是一个 Minecraft NeoForge 模组，用于自动更新服务器�
 
 1. 将 `sakuraupdater-[version].jar` 放入单独文件夹。
 2. 直接 `java -jar sakuraupdater-[version].jar` 即可运行服务端。
-3. 编辑 `sakuraupdater-client.toml` 配置文件。
+3. 编辑 `sakuraupdater-common.toml` 独立服务端配置文件。
+
+### 运行时依赖
+
+同一个 JAR 支持 NeoForge 模组和 `java -jar` 独立运行，依赖不再随包发布。独立模式启动时获取 SQLite JDBC 3.46.0.0、Gson 2.10、NightConfig core/toml 3.8.1、SLF4J api/simple 2.0.9。NeoForge 服务端仅在连接数据库时获取 SQLite；普通客户端不会下载这些依赖。
+
+首次启动需要联网：优先使用阿里云 Central 镜像（`https://maven.aliyun.com/repository/central/`），失败后尝试 Maven Central（`https://repo.maven.apache.org/maven2/`）。文件缓存到进程工作目录下的 `lib/`，使用前检查固定 SHA-256；缓存有效时不再联网，支持离线启动。
+
+如需指定下载源，在启动 Java 前设置环境变量 `SAKURAUPDATER_MAVEN_REPO`，值为 HTTP(S) Maven 仓库根地址。PowerShell 示例：
+
+```powershell
+$env:SAKURAUPDATER_MAVEN_REPO = "https://maven.aliyun.com/repository/central/"
+java -jar sakuraupdater-[version].jar
+```
+
+非空值会**完全替换两个默认源**，自定义源失败时不会再访问公共源；未设置或只有空白时，仍按“阿里云 → Maven Central”尝试。末尾 `/` 可省略，地址不能带用户名、密码、查询参数或片段。独立模式与 NeoForge 模式均适用，修改后需要重启对应进程。自定义源下载的文件仍需通过固定 SHA-256 校验。
+
+没网时，如果所需缓存完整且校验通过，程序正常启动，不发起下载。缺少依赖或缓存损坏时，会尝试下载；所有配置的源都失败后，在该依赖处终止启动。每个源仅尝试一次，连接超时 10 秒、读取超时 60 秒（并非整个启动过程的总时限）。独立模式退出码为 1；NeoForge 服务端会报告模组初始化错误，无法完成启动。已有数据库文件不会被删除，普通客户端也不会因为这些依赖无法下载而受影响。没有公网但能访问局域网 Maven 仓库时，也可以通过自定义源补齐依赖。
+
+离线部署时，从已成功运行的安装目录复制对应版本的 JAR 到 `lib/`，保持原文件名（例如 `sqlite-jdbc-3.46.0.0.jar`）；独立模式需要全部 6 个文件。旧版本释放的有效 `lib/` 文件可直接复用。目录中的锁文件可以保留，不要在程序运行时删除。
+
+获取失败时，日志会列出依赖名称、尝试的地址和失败原因。检查网络及 `lib/` 写入权限，或手动预置校验正确的文件后重启。损坏缓存仅在新文件完整下载并校验通过后替换；依赖获取或数据库初始化失败会终止服务端启动。JAR 直接加载，SQLite 原生库由驱动自动解压，JVM 临时目录需要可写。
 
 ## 配置说明
 
