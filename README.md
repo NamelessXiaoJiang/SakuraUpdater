@@ -102,8 +102,11 @@ now_version = ""
 # Show details for a specific version
 /sakuraupdater data show v1.0.1
 
-# Edit version description
+# Edit version description (only the description: the file list and the timestamp are left untouched)
 /sakuraupdater data edit v1.0.1 "Updated version description"
+
+# Rebuild a version's file list from the current sync directories
+/sakuraupdater data repair v1.0.1
 
 # Delete a version
 /sakuraupdater data delete v1.0.1
@@ -111,6 +114,8 @@ now_version = ""
 # Clear all version data
 /sakuraupdater data clear
 ```
+
+> `data repair <version>` is for versions whose file list is empty — for example versions damaged by an older build's `data edit` bug, or versions that were never committed properly. It keeps the description and timestamp, so the order of your update log does not change. Note that it records the **current** contents of your sync directories, not a historical snapshot of that release.
 
 ### 2. Client player operations
 
@@ -219,8 +224,11 @@ now_version = ""
 # 查看特定版本详情
 /sakuraupdater data show v1.0.1
 
-# 编辑版本描述
+# 编辑版本描述（只改描述：文件清单与时间戳都不会被动）
 /sakuraupdater data edit v1.0.1 "更新了版本描述"
+
+# 重建某个版本的文件清单（按当前同步目录重新扫描）
+/sakuraupdater data repair v1.0.1
 
 # 删除版本
 /sakuraupdater data delete v1.0.1
@@ -228,6 +236,8 @@ now_version = ""
 # 清空所有版本数据
 /sakuraupdater data clear
 ```
+
+> `data repair <版本>` 用于文件清单为空的版本——例如被旧版本 `data edit` 的 bug 清空过的版本，或当时没 commit 好的版本。它会保留描述与时间戳，所以不会打乱更新日志的顺序。注意：它记录的是**当前**同步目录里的内容，不是那一版当时的历史快照。
 
 ### 2. 客户端玩家操作
 

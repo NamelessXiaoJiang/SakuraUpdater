@@ -207,6 +207,20 @@ public class SakuraUpdaterServerStandalone {
                                 LOGGER.warn(result.message);
                             }
                         }))
+                        .then(new CommandDispatcher("repair").execute(cmd -> {
+                            String[] parts = cmd.split(" ", 2);
+                            if (parts.length > 1) {
+                                LOGGER.warn(
+                                        "Invalid command format. Usage: sakuraupdater data repair <version>");
+                                return;
+                            }
+                            ServerCommandsHelper.CommandResult result = ServerCommandsHelper.repairData(parts[0]);
+                            if (result.success) {
+                                LOGGER.info(result.message);
+                            } else {
+                                LOGGER.warn(result.message);
+                            }
+                        }))
                         .then(new CommandDispatcher("show").execute(cmd -> {
                             String[] parts = cmd.split(" ", 2);
                             if (parts.length > 1) {

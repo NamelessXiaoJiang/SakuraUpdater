@@ -89,10 +89,28 @@ public class SakuraUpdaterServer {
         return literal("data")
                 .requires(source -> source.hasPermission(2))
                 .then(createDataEditCommand())
+                .then(createDataRepairCommand())
                 .then(createDataListCommand())
                 .then(createDataShowCommand())
                 .then(createDataDeleteCommand())
                 .then(createDataClearCommand());
+    }
+
+    // ----Create the /ssync data repair command----
+    private LiteralArgumentBuilder<CommandSourceStack> createDataRepairCommand() {
+        return literal("repair")
+                .then(argument("version", string())
+                        .suggests(VERSION_SUGGESTIONS)
+                        .executes(context -> {
+                            String version = getString(context, "version");
+                            CommandResult result = ServerCommandsHelper.repairData(version);
+                            if (!result.success) {
+                                sendFailureMessage(context.getSource(), result.message);
+                                return 0;
+                            }
+                            sendSuccessMessage(context.getSource(), result.message);
+                            return 1;
+                        }));
     }
 
     // ----Create the /ssync data subcommands----
