@@ -163,7 +163,6 @@ dependencies {
 
     // 运行时依赖由 PackageManager 获取，编译类路径由 NeoForge 提供。
 
-<<<<<<< HEAD
 }
 
 // Uncomment the lines below if you wish to configure mixin. The mixin file should be named modid.mixins.json.
@@ -174,8 +173,6 @@ mixin {
 
 dependencies {
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
-=======
->>>>>>> 970bf1a142b558dde80eacbc5206df42ace68394
 }
 
 // 模组JAR - 用于Forge环境
