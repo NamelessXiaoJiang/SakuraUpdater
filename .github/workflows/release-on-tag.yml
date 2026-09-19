@@ -84,8 +84,11 @@ jobs:
         with:
           modrinth-id: 1dzlx6Br # Modrinth 项目 ID
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          # 三个产物都发；第一项是 Modrinth 的主文件（-server 是通用包，装错也能跑）
           files: |
-            build/libs/*.jar
+            build/libs/*-server.jar
+            build/libs/*-client.jar
+            build/libs/*-standalone.jar
           name: ${{ github.ref_name }}
           version: ${{ github.ref_name }}
           changelog: ${{ steps.get_msg.outputs.body }}

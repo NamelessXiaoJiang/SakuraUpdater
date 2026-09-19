@@ -237,16 +237,110 @@ dependencies {
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 }
 
-// 模组JAR - 用于Forge环境
+// ==================== 三个产物 ====================
+// server      : 含 JarJar 的 SQLite，用于专用服务端（也含客户端全部功能，是通用包）
+// client      : 客户端瘦包，不含 SQLite（客户端进程从来不碰数据库）
+// standalone  : 独立模式（java -jar），内嵌 standaloneLibs、带 Main-Class，不含 JarJar
+// client / standalone 都从已构建好的 server 包派生，保证除被 exclude 的部分外逐项一致
+// （legacyforge 会往 jar 里注入 mixin refmap 等生成物，自己重组文件容易漏掉）
+
+def zipEntries = { File f ->
+    def names = new java.util.TreeSet<String>()
+    new java.util.zip.ZipFile(f).withCloseable { zip ->
+        zip.entries().each { names.add(it.name) }
+    }
+    return names
+}
+
+// 派生包相对基准包：只允许缺少 allowedRemoved 前缀下的条目、只允许新增 allowedAdded 前缀下的条目
+def assertDerived = { File base, File derived, List<String> allowedRemoved, List<String> allowedAdded, String label ->
+    def b = zipEntries(base)
+    def d = zipEntries(derived)
+    def unexpectedMissing = (b - d).findAll { name -> !allowedRemoved.any { name.startsWith(it) } }
+    def unexpectedAdded = (d - b).findAll { name -> !allowedAdded.any { name.startsWith(it) } }
+    if (!unexpectedMissing.isEmpty() || !unexpectedAdded.isEmpty()) {
+        throw new GradleException("产物校验失败(${label}): 相比 ${base.name} 缺少 ${unexpectedMissing}，多出 ${unexpectedAdded}")
+    }
+}
+
+// 模组JAR（服务端 / 通用包）：保留 JarJar 的 SQLite，不再内嵌独立模式依赖
 jar {
-    manifest.attributes([
-            'Main-Class': 'fun.sakuraspark.sakuraupdater.SakuraUpdaterBootstrap'
-    ])
-    archiveClassifier.set('')
-    // 将 standaloneLibs 里的 jar 包全部放入生成的 jar 包内的 standaloneLibs/ 目录下
+    archiveClassifier.set('server')
+    doLast {
+        File self = archiveFile.get().asFile
+        def entries = zipEntries(self)
+        if (!entries.any { it.startsWith('META-INF/jarjar/') }) {
+            throw new GradleException("产物校验失败(server): ${self.name} 缺少 META-INF/jarjar 下的 SQLite")
+        }
+    }
+}
+
+// 客户端瘦包：不含 JarJar SQLite 与独立模式依赖
+tasks.register('clientJar', Jar) {
+    dependsOn tasks.named('jar')
+    archiveClassifier.set('client')
+    from(zipTree(tasks.named('jar').flatMap { it.archiveFile })) {
+        exclude 'META-INF/MANIFEST.MF' // 交给本任务重新生成，不再继承 Main-Class
+        exclude 'META-INF/jarjar'
+        exclude 'META-INF/jarjar/**'
+        exclude 'standaloneLibs'
+        exclude 'standaloneLibs/**'
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    doLast {
+        File self = archiveFile.get().asFile
+        assertDerived(tasks.jar.archiveFile.get().asFile, self,
+                ['META-INF/jarjar', 'standaloneLibs'], [], 'client')
+        def entries = zipEntries(self)
+        def residue = entries.findAll { it.startsWith('META-INF/jarjar') || it.startsWith('standaloneLibs') }
+        if (!residue.isEmpty()) {
+            throw new GradleException("产物校验失败(client): ${self.name} 里仍有 ${residue}")
+        }
+        if (!entries.any { it.startsWith('META-INF/') && it.endsWith('.toml') }) {
+            throw new GradleException("产物校验失败(client): ${self.name} 缺 mods.toml / neoforge.mods.toml")
+        }
+        if (self.length() > 3L * 1024 * 1024) {
+            throw new GradleException("产物校验失败(client): ${self.name} 有 ${self.length()} 字节，瘦身失效")
+        }
+    }
+}
+
+// 独立模式包：内嵌 standaloneLibs + Main-Class；JarJar 目录对 java -jar 无用，去掉
+tasks.register('standaloneJar', Jar) {
+    dependsOn tasks.named('jar')
+    archiveClassifier.set('standalone')
+    manifest {
+        attributes('Main-Class': 'fun.sakuraspark.sakuraupdater.SakuraUpdaterBootstrap')
+    }
+    from(zipTree(tasks.named('jar').flatMap { it.archiveFile })) {
+        exclude 'META-INF/MANIFEST.MF'
+        exclude 'META-INF/jarjar'
+        exclude 'META-INF/jarjar/**'
+    }
     into('standaloneLibs') {
         from configurations.standaloneLibs
     }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    doLast {
+        File self = archiveFile.get().asFile
+        assertDerived(tasks.jar.archiveFile.get().asFile, self,
+                ['META-INF/jarjar'], ['standaloneLibs'], 'standalone')
+        def entries = zipEntries(self)
+        if (!entries.any { it.startsWith('standaloneLibs/sqlite-jdbc') }) {
+            throw new GradleException("产物校验失败(standalone): ${self.name} 里缺少 standaloneLibs 的 sqlite-jdbc")
+        }
+        String manifest = new java.util.zip.ZipFile(self).withCloseable { zip ->
+            zip.getInputStream(zip.getEntry('META-INF/MANIFEST.MF')).getText('UTF-8')
+        }
+        if (!manifest.contains('SakuraUpdaterBootstrap')) {
+            throw new GradleException("产物校验失败(standalone): MANIFEST 里没有 Main-Class=SakuraUpdaterBootstrap")
+        }
+    }
+}
+
+// 让 ./gradlew build（CI 也是这条）产出全部三个包
+tasks.named('assemble') {
+    dependsOn tasks.named('clientJar'), tasks.named('standaloneJar')
 }
 
 // // 独立模式JAR - 包含所有必要的依赖

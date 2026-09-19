@@ -39,6 +39,8 @@ public class SakuraUpdaterServer {
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, ServerConfig.SPEC);
         if (!DataConfig.connectToDatabase("config/sakuraupdater-database.db")) {
             LOGGER.error("Failed to connect to SakuraUpdater database!");
+            LOGGER.error("This usually means the SQLite driver is missing: you may have installed the client-only "
+                    + "'-client' jar on a dedicated server. Please use the '-server' (or '-standalone') jar instead.");
         }
         INSTANCE = this;
         // fileServer = new FileServer(ConfigServer.SERVER_PORT.get(),
