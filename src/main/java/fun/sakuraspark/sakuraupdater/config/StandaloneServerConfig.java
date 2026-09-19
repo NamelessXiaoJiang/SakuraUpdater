@@ -27,6 +27,7 @@ public class StandaloneServerConfig {
 
     // ---- 配置值 ----
     private static int port = 25564;
+    private static int maxThreads = 32;
     private static List<String> syncDirs = new ArrayList<>();
 
     private StandaloneServerConfig() {
@@ -77,6 +78,17 @@ public class StandaloneServerConfig {
                     }
                 }
 
+                // max_threads
+                Object threadsObj = config.get("max_threads");
+                if (threadsObj instanceof Number) {
+                    int t = ((Number) threadsObj).intValue();
+                    if (t >= 4 && t <= 256) {
+                        maxThreads = t;
+                    } else {
+                        LOGGER.warn("Config 'max_threads' out of range (4-256): {}, using default {}", t, maxThreads);
+                    }
+                }
+
                 // SYNC_DIR
                 List<String> syncList = config.get("SYNC_DIR");
                 if (syncList != null) {
@@ -104,6 +116,10 @@ public class StandaloneServerConfig {
                 #The port of the file server, default is 25564.
                 #Range: 1 ~ 65535
                 port = 25564
+                #Max concurrent handler threads of the built-in file server.
+                #Every in-flight file download occupies one thread, so keep it >= (client download_connections * expected concurrent updating players).
+                #Range: 4 ~ 256
+                max_threads = 32
                 #A list of sync directories, each entry should be in the format 'targetpath:mode[:sourcepath:sourcepath2:...]', e.g. 'mod:mirror' or 'config:push:clientconfig'.
                 #The 'targetpath' is the client target path of sync, and 'sourcepath' is the server source path of sync.
                 #The 'sourcepath' is optional, if not provided, it will be the same as 'targetpath'.
@@ -150,6 +166,10 @@ public class StandaloneServerConfig {
 
     public static int getPort() {
         return port;
+    }
+
+    public static int getMaxThreads() {
+        return maxThreads;
     }
 
     public static List<String> getSyncDirs() {
