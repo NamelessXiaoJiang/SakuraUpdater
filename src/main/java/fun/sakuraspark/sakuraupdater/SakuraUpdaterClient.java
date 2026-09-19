@@ -148,6 +148,14 @@ public class SakuraUpdaterClient {
         if (getLastUpdateData() == null) {
             return false;
         }
+        if (last_update_data.paths == null || last_update_data.paths.isEmpty()) {
+            // 服务端这个版本的文件清单是空的（被旧版 data edit 清空过、commit 时 SYNC_DIR 是空的、或该版本没 commit 好）。
+            // 这里必须"响亮失败"：异常会被 UpdateCheckScreen 的 try/catch 接住并显示"检查失败"；
+            // 不能返回 false，否则界面会当成"只有服务端更新"从而静默放行玩家进服（而且什么都没同步）。
+            throw new IllegalStateException("Server version " + last_update_data.version
+                    + " has an empty file list, run 'data repair " + last_update_data.version
+                    + "' on the server to rebuild it.");
+        }
         Gson gson = new Gson();
         for (PathData pathData : last_update_data.paths) {
             // 格式错误
