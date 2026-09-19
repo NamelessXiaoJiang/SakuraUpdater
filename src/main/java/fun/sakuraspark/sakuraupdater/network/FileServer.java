@@ -1,7 +1,6 @@
 package fun.sakuraspark.sakuraupdater.network;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,11 +24,17 @@ import fun.sakuraspark.sakuraupdater.config.DataConfig;
 import fun.sakuraspark.sakuraupdater.config.DataConfig.Data;
 import fun.sakuraspark.sakuraupdater.config.DataConfig.FileData;
 import fun.sakuraspark.sakuraupdater.config.DataConfig.PathData;
+import fun.sakuraspark.sakuraupdater.config.ServerConfig;
+import fun.sakuraspark.sakuraupdater.config.StandaloneServerConfig;
 
 
 
 public class FileServer {
     private static final Logger LOGGER = org.slf4j.LoggerFactory.getLogger(FileServer.class);
+
+    /** 读取不到配置时的线程池大小 */
+    private static final int DEFAULT_MAX_THREADS = 32;
+
     private final int port;
     private HttpServer httpServer;
     private boolean isRunning = false;
@@ -55,15 +60,33 @@ public class FileServer {
             httpServer.createContext("/file", new FileDownloadHandler());
             //httpServer.createContext("/upload", new FileUploadHandler());
             
-            // 设置线程池大小
-            httpServer.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(10));
+            // 每个进行中的下载都会占住一个线程，所以线程数至少要能覆盖
+            // "客户端 download_connections × 同时在更新的玩家数"
+            int maxThreads = getConfiguredMaxThreads();
+            httpServer.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(maxThreads));
             
             httpServer.start();
             isRunning = true;
-            LOGGER.info("File server started on port: {}", port);
+            LOGGER.info("File server started on port: {} (thread pool size: {})", port, maxThreads);
         } catch (IOException e) {
             LOGGER.error("Failed to start file server", e);
             shutdown();
+        }
+    }
+
+    /**
+     * 读取配置文件里的线程池大小。独立模式和 mod 模式用各自的配置类，
+     * 这里按运行模式选择，避免在独立模式下加载依赖 Forge 的 ServerConfig。
+     */
+    private static int getConfiguredMaxThreads() {
+        try {
+            if (StandaloneServerConfig.isStandalone()) {
+                return StandaloneServerConfig.getMaxThreads();
+            }
+            return ServerConfig.getMaxThreads();
+        } catch (Throwable t) {
+            LOGGER.warn("Failed to read max_threads from config, falling back to {}", DEFAULT_MAX_THREADS, t);
+            return DEFAULT_MAX_THREADS;
         }
     }
 
@@ -90,16 +113,18 @@ public class FileServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             if ("POST".equals(exchange.getRequestMethod())) {
-                String response = "OK";
+                // acceptRanges 用来告诉新版客户端可以按 Range 分块下载；
+                // 旧版客户端只看 HTTP 状态码，响应体改成 JSON 不影响它
+                String response = "{\"status\":\"ok\",\"acceptRanges\":true}";
                 byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().set("Content-Type", "text/plain;charset=utf-8");
+                exchange.getResponseHeaders().set("Content-Type", "application/json;charset=utf-8");
                 exchange.sendResponseHeaders(200, responseBytes.length);
                 
                 try (OutputStream os = exchange.getResponseBody()) {
                     os.write(responseBytes);
                 }
                 
-                LOGGER.info("Heartbeat received and responded.");
+                LOGGER.debug("Heartbeat received and responded.");
             } else {
                 sendError(exchange, 405, "Method Not Allowed");
             }
@@ -239,25 +264,56 @@ public class FileServer {
                     
                     try {
                         long fileSize = file.length();
-                        exchange.getResponseHeaders().set("Content-Type", "application/octet-stream");
-                        exchange.getResponseHeaders().set("Content-Length", String.valueOf(fileSize));
-                        String encodedFileName = java.net.URLEncoder.encode(file.getName(), StandardCharsets.UTF_8);
-                        exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + encodedFileName + "\"");
-                        exchange.sendResponseHeaders(200, fileSize);
-                        
-                        try (OutputStream os = exchange.getResponseBody();
-                             FileInputStream fis = new FileInputStream(file)) {
-                            byte[] buffer = new byte[8192];
-                            int bytesRead;
-                            while ((bytesRead = fis.read(buffer)) != -1) {
-                                os.write(buffer, 0, bytesRead);
-                            }
-                            if (fileSize == 0) {
-                                os.write(new byte[0]); // 确保空文件也能正确响应
+
+                        // 解析 Range：null = 忽略该头（语法不合法/多区间）按整文件返回，{-1,-1} = 不可满足
+                        String rangeHeader = exchange.getRequestHeaders().getFirst("Range");
+                        long[] range = null;
+                        if (fileSize > 0 && rangeHeader != null) {
+                            long[] parsed = parseRangeHeader(rangeHeader, fileSize);
+                            if (parsed == null) {
+                                LOGGER.debug("Ignoring unsupported Range header for {}: {}", fileName, rangeHeader);
+                            } else if (parsed[0] < 0) {
+                                exchange.getResponseHeaders().set("Content-Range", "bytes */" + fileSize);
+                                sendError(exchange, 416, "Requested Range Not Satisfiable");
+                                return;
+                            } else {
+                                range = parsed;
                             }
                         }
-                        
-                        LOGGER.debug("Send file success: {}", fileName);
+
+                        long start = range == null ? 0 : range[0];
+                        long end = range == null ? fileSize - 1 : range[1];
+                        long contentLength = fileSize == 0 ? 0 : end - start + 1;
+
+                        exchange.getResponseHeaders().set("Content-Type", "application/octet-stream");
+                        exchange.getResponseHeaders().set("Accept-Ranges", "bytes");
+                        exchange.getResponseHeaders().set("Content-Length", String.valueOf(contentLength));
+                        String encodedFileName = java.net.URLEncoder.encode(file.getName(), StandardCharsets.UTF_8);
+                        exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + encodedFileName + "\"");
+                        if (range != null) {
+                            exchange.getResponseHeaders().set("Content-Range",
+                                    "bytes " + start + "-" + end + "/" + fileSize);
+                        }
+                        exchange.sendResponseHeaders(range == null ? 200 : 206, contentLength);
+
+                        try (OutputStream os = exchange.getResponseBody();
+                             java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "r")) {
+                            raf.seek(start);
+                            byte[] buffer = new byte[8192];
+                            long remaining = contentLength;
+                            while (remaining > 0) {
+                                int bytesRead = raf.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+                                if (bytesRead == -1) {
+                                    break;
+                                }
+                                os.write(buffer, 0, bytesRead);
+                                remaining -= bytesRead;
+                            }
+                            os.flush();
+                        }
+
+                        LOGGER.debug("Send file success: {} ({})", fileName,
+                                range == null ? "full" : start + "-" + end + "/" + fileSize);
                     } catch (Exception e) {
                         LOGGER.error("Send file failed: {}", fileName, e);
                         if (!exchange.getResponseHeaders().containsKey("Content-Type")) {
@@ -321,6 +377,58 @@ public class FileServer {
             } else {
                 sendError(exchange, 405, "Method Not Allowed");
             }
+        }
+    }
+
+    /**
+     * 解析单区间 Range 请求头（形如 bytes=start-end / bytes=start- / bytes=-suffix）。
+     *
+     * @return null 表示应当忽略该头并返回完整内容（格式不合法、多区间、或无法解析）；
+     *         返回 {-1, -1} 表示区间格式合法但不可满足（应回 416）；
+     *         否则返回闭区间 {start, end}，已按文件大小夹取。
+     */
+    private static long[] parseRangeHeader(String header, long fileSize) {
+        String value = header.trim();
+        if (!value.startsWith("bytes=")) {
+            return null;
+        }
+        value = value.substring("bytes=".length()).trim();
+        // 多区间（bytes=0-99,200-299）不支持，按整文件返回
+        if (value.isEmpty() || value.indexOf(',') >= 0) {
+            return null;
+        }
+        int dash = value.indexOf('-');
+        if (dash < 0) {
+            return null;
+        }
+        String startStr = value.substring(0, dash).trim();
+        String endStr = value.substring(dash + 1).trim();
+        try {
+            if (startStr.isEmpty()) {
+                // bytes=-N：最后 N 个字节
+                if (endStr.isEmpty()) {
+                    return null;
+                }
+                long suffix = Long.parseLong(endStr);
+                if (suffix <= 0) {
+                    return new long[] { -1, -1 };
+                }
+                return new long[] { Math.max(0, fileSize - suffix), fileSize - 1 };
+            }
+            long start = Long.parseLong(startStr);
+            long end = endStr.isEmpty() ? fileSize - 1 : Long.parseLong(endStr);
+            if (start < 0 || start >= fileSize) {
+                return new long[] { -1, -1 };
+            }
+            if (end >= fileSize) {
+                end = fileSize - 1;
+            }
+            if (end < start) {
+                return new long[] { -1, -1 };
+            }
+            return new long[] { start, end };
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

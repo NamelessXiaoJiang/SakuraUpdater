@@ -252,7 +252,8 @@ public class SakuraUpdaterClient {
 
         // 下载需要的文件
         integrityCheckResult.getSecond().forEach(fileData -> {
-            if (file_client.downloadFile(fileData.sourcePath, fileData.targetPath)) {
+            if (file_client.downloadFile(fileData.sourcePath, fileData.targetPath, fileData.md5,
+                    ClientConfig.getDownloadConnections())) {
                 LOGGER.info("Downloaded file: {}", fileData.sourcePath);
             } else {
                 download_failures++;
