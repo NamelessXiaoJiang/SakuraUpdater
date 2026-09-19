@@ -33,6 +33,8 @@ public class DataConfig {
         public String md5; // 文件MD5
     }
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(DataConfig.class);
+
     private static Connection connection = null;
 
     /**
@@ -101,31 +103,78 @@ public class DataConfig {
     }
 
     /**
-     * 编辑数据记录
-     * @param version 版本号
-     * @param time 时间
-     * @param description 描述
-     * @param files 文件列表
-     * @return 是否编辑成功
+     * 编辑版本描述。只改 description，不动 data（文件清单）也不动 time。
+     * <p>
+     * 历史实现会把调用方传进来的 files（实际调用时是 null）序列化成字面量字符串 "null" 写进 data 列，
+     * 从而清空该版本的文件清单；同时它还会刷新 time，导致编辑一个旧版本的描述后，
+     * 该旧版本在 {@code ORDER BY time DESC} 里变成"最新版本"。这里只允许改描述，避免这两类副作用。
+     *
+     * @param version     版本号
+     * @param description 新描述
+     * @return 是否编辑成功（版本不存在返回 false）
      */
-    public static boolean editData(String version, String time, String description, List<PathData> files) {
-        
-        Gson gson = new Gson();
-        String dataJson = gson.toJson(files);
-        String sql = "UPDATE updates SET time = ?, description = ?, data = ? WHERE version = ?";
+    public static boolean editData(String version, String description) {
+        String sql = "UPDATE updates SET description = ? WHERE version = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, time);
-            pstmt.setString(2, description);
-            pstmt.setString(3, dataJson);
-            pstmt.setString(4, version);
+            pstmt.setString(1, description);
+            pstmt.setString(2, version);
             int affectedRows = pstmt.executeUpdate();
             if (affectedRows == 0) {
                 return false; // 如果没有找到对应的版本，返回false
             }
         } catch (Exception e) {
+            LOGGER.warn("Failed to edit the description of version {}: {}", version, e.toString());
             return false;
         }
         return true;
+    }
+
+    /**
+     * 只更新某个版本的文件清单（供 data repair 使用），描述与 time 保持不变。
+     *
+     * @return 是否更新成功（版本不存在或 files 为 null 返回 false）
+     */
+    public static boolean updateFiles(String version, List<PathData> files) {
+        if (files == null) {
+            return false;
+        }
+        String dataJson = new Gson().toJson(files);
+        String sql = "UPDATE updates SET data = ? WHERE version = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, dataJson);
+            pstmt.setString(2, version);
+            if (pstmt.executeUpdate() == 0) {
+                return false;
+            }
+        } catch (Exception e) {
+            LOGGER.warn("Failed to update the file list of version {}: {}", version, e.toString());
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 解析 data 列里的文件清单。
+     * <p>
+     * 被旧版 data edit 破坏过的行，data 列是 4 个字符的字面量 "null"。这种行在这里打一条明确的 WARN，
+     * 但仍然返回 null —— 保持"响亮失败"：客户端会报检查失败，而不是被当成"没有文件"而静默放行玩家。
+     */
+    @Nullable
+    private static List<PathData> parsePaths(@Nullable String dataJson, String version) {
+        if (dataJson == null || dataJson.isBlank() || "null".equals(dataJson.trim())) {
+            LOGGER.warn("Version {} has no file list in the database (data column = {}). "
+                            + "It was probably wiped by the old 'data edit' bug, or this version was never committed. "
+                            + "Run 'data repair {}' on the server to rebuild it.",
+                    version, dataJson == null ? "NULL" : "'" + dataJson.trim() + "'", version);
+            return null;
+        }
+        try {
+            return new Gson().fromJson(dataJson, new com.google.gson.reflect.TypeToken<List<PathData>>() {
+            }.getType());
+        } catch (Exception e) {
+            LOGGER.warn("Failed to parse the file list of version {}: {}", version, e.toString());
+            return null;
+        }
     }
 
     /**
@@ -194,9 +243,7 @@ public class DataConfig {
                     data.version = rs.getString("version");
                     data.time = rs.getString("time");
                     data.description = rs.getString("description");
-                    String dataJson = rs.getString("data");
-                    Gson gson = new Gson();
-                    data.paths = gson.fromJson(dataJson, new com.google.gson.reflect.TypeToken<List<PathData>>(){}.getType());
+                    data.paths = parsePaths(rs.getString("data"), data.version);
                     return data;
                 } else {
                     return null;
@@ -258,9 +305,7 @@ public class DataConfig {
                     data.version = rs.getString("version");
                     data.time = rs.getString("time");
                     data.description = rs.getString("description");
-                    String dataJson = rs.getString("data");
-                    Gson gson = new Gson();
-                    data.paths = gson.fromJson(dataJson, new com.google.gson.reflect.TypeToken<List<PathData>>(){}.getType());
+                    data.paths = parsePaths(rs.getString("data"), data.version);
                     datas.add(data);
                 }
             }
