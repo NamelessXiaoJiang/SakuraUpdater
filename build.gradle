@@ -163,6 +163,7 @@ dependencies {
 
     // 运行时依赖由 PackageManager 获取，编译类路径由 NeoForge 提供。
 
+<<<<<<< HEAD
 }
 
 // Uncomment the lines below if you wish to configure mixin. The mixin file should be named modid.mixins.json.
@@ -173,6 +174,8 @@ mixin {
 
 dependencies {
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+=======
+>>>>>>> 970bf1a142b558dde80eacbc5206df42ace68394
 }
 
 // 模组JAR - 用于Forge环境
@@ -233,7 +236,11 @@ tasks.register('dependencyManagerTest', JavaExec) {
     dependsOn tasks.named('testClasses')
     classpath = files(sourceSets.test.output, sourceSets.main.output)
     mainClass = 'fun.sakuraspark.sakuraupdater.PackageManagerTest'
+<<<<<<< HEAD
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+=======
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+>>>>>>> 970bf1a142b558dde80eacbc5206df42ace68394
 }
 tasks.named('check') { dependsOn tasks.named('dependencyManagerTest') }
 
