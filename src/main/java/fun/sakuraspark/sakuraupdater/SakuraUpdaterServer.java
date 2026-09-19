@@ -38,7 +38,7 @@ public class SakuraUpdaterServer {
     SakuraUpdaterServer() {
         ModLoadingContext.get().getActiveContainer().registerConfig(ModConfig.Type.COMMON, ServerConfig.SPEC);
         if (!DataConfig.connectToDatabase("config/sakuraupdater-database.db")) {
-            LOGGER.error("Failed to connect to SakuraUpdater database!");
+            throw new IllegalStateException("Failed to initialize SakuraUpdater database; see dependency/database errors above.");
         }
         INSTANCE = this;
         // fileServer = new FileServer(ConfigServer.SERVER_PORT.get(),

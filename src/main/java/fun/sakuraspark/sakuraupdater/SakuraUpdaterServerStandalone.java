@@ -168,7 +168,7 @@ public class SakuraUpdaterServerStandalone {
         // 2. 连接数据库
         if (!DataConfig.connectToDatabase("sakuraupdater-database.db")) {
             LOGGER.error("Failed to connect to SakuraUpdater database!");
-            return 0;
+            return 1;
         }
 
         // 3. 启动文件服务器
@@ -288,7 +288,6 @@ public class SakuraUpdaterServerStandalone {
                 String input = scanner.nextLine();
                 if ("exit".equalsIgnoreCase(input) || "quit".equalsIgnoreCase(input) || "stop".equalsIgnoreCase(input)) {
                     LOGGER.info("Shutting down SakuraUpdater Standalone Server...");
-                    fileServer.shutdown();
                     scanner.close();
                     return 0;
                 }
@@ -308,7 +307,11 @@ public class SakuraUpdaterServerStandalone {
             }
         } catch (Exception e) {
             LOGGER.error("Error while reading console input: ", e);
+            return 1;
+        } finally {
+            fileServer.shutdown();
+            DataConfig.closeDatabase();
         }
-        return -1;
+        return 0;
     }
 }
