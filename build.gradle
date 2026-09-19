@@ -2,7 +2,6 @@ plugins {
     id 'idea'
     id 'java-library'
     id 'maven-publish'
-    id 'com.gradleup.shadow' version '8.3.6'
     id 'net.neoforged.moddev' version '2.0.105'
 }
 
@@ -125,11 +124,6 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 // "optional", meaning it will not be pulled by dependents of this mod.
 configurations {
     runtimeClasspath.extendsFrom localRuntime
-    // 独立模式依赖配置
-    standaloneLibs {
-        canBeResolved = true
-        canBeConsumed = false
-    }
 }
 // obfuscation {
 //     createRemappingConfiguration(configurations.localRuntime)
@@ -164,64 +158,8 @@ dependencies {
     
     //modLocalRuntime 'maven.modrinth:do-a-barrel-roll:3.5.6+1.20.1-forge'
 
-    // SQLite 数据库驱动
-    // 使用 Jar-in-Jar 引入，确保开发环境（compile/runtime）可用，且打包时包含在 JarJar 中
-    implementation 'org.xerial:sqlite-jdbc:3.46.0.0'
-    additionalRuntimeClasspath 'org.xerial:sqlite-jdbc:3.46.0.0'
-    jarJar(implementation(group: 'org.xerial', name: 'sqlite-jdbc')) {
-        version {
-            // Version used in your workspace and bundled in mod jar
-            prefer '3.46.0.0'
-        }
-    }
+    // 运行时依赖由 PackageManager 获取，编译类路径由 NeoForge 提供。
 
-    // // GSON - 用于独立模式（脱离 Forge）的 JSON 配置解析
-    // compileOnly 'com.google.code.gson:gson:2.10'
-    // jarJar(group: 'com.google.code.gson', name: 'gson') {
-    //     version {
-    //         prefer '2.10'
-    //     }
-    // }
-
-    // // // NightConfig TOML - 用于独立模式（脱离 Forge）的 TOML 配置解析
-    // compileOnly 'com.electronwill.night-config:toml:3.8.1'
-    // compileOnly 'com.electronwill.night-config:core:3.8.1'
-    // jarJar(group: 'com.electronwill.night-config', name: 'toml') {
-    //     version {
-    //         prefer '3.8.1'
-    //     }
-    // }
-    // jarJar(group: 'com.electronwill.night-config', name: 'core') {
-    //     version {
-    //         prefer '3.8.1'
-    //     }
-    // }
-
-    // // Standalone logging - only needed for standalone JAR, not dev environment
-    // // Use compileOnly to have the classes available at compile time
-    // compileOnly 'org.slf4j:slf4j-api:2.0.9'
-    // compileOnly 'org.slf4j:slf4j-simple:2.0.9'
-    // // JarJar will include them in the final JAR for standalone mode
-    // jarJar(group: 'org.slf4j', name: 'slf4j-api') {
-    //     version {
-    //         prefer '2.0.9'
-    //     }
-    // }
-    // jarJar(group: 'org.slf4j', name: 'slf4j-simple') {
-    //     version {
-    //         prefer '2.0.9'
-    //     }
-    // }
-
-    //modLocalRuntime 'maven.modrinth:aether:1.20.1-1.5.2-neoforge'
-
-    // 独立模式依赖 - 直接包含到JAR中
-    standaloneLibs 'org.xerial:sqlite-jdbc:3.46.0.0'
-    standaloneLibs 'com.google.code.gson:gson:2.10'
-    standaloneLibs 'com.electronwill.night-config:toml:3.8.1'
-    standaloneLibs 'com.electronwill.night-config:core:3.8.1'
-    standaloneLibs 'org.slf4j:slf4j-api:2.0.9'
-    standaloneLibs 'org.slf4j:slf4j-simple:2.0.9'
 }
 
 // 模组JAR - 用于Forge环境
@@ -230,43 +168,7 @@ jar {
             'Main-Class': 'fun.sakuraspark.sakuraupdater.SakuraUpdaterBootstrap'
     ])
     archiveClassifier.set('')
-    // 将 standaloneLibs 里的 jar 包全部放入生成的 jar 包内的 standaloneLibs/ 目录下
-    into('standaloneLibs') {
-        from configurations.standaloneLibs
-    }
 }
-
-// // 独立模式JAR - 包含所有必要的依赖
-// shadowJar {
-//     archiveClassifier.set('standalone')
-//     configurations = [project.configurations.standaloneLibs]
-    
-//     manifest.attributes([
-//             'Main-Class': 'fun.sakuraspark.sakuraupdater.SakuraUpdaterBootstrap'
-//     ])
-    
-//     // 排除不必要的元数据文件 
-//     exclude 'META-INF/maven/**'
-//     // standalone 仅用于 java -jar，不应被 Forge 当成 MOD 解析
-//     exclude 'META-INF/mods.toml'
-//     exclude 'META-INF/neoforge.mods.toml'
-//     exclude 'META-INF/LICENSE*'
-//     exclude 'META-INF/*.SF'
-//     exclude 'META-INF/*.RSA'
-    
-//     // 处理SPI服务文件（JDBC驱动程序等）
-//     mergeServiceFiles()
-    
-//     // 重定位包名防止与Forge/其他模组在模块层冲突
-//     relocate 'com.google.gson', 'fun.sakuraspark.sakuraupdater.shadow.com.google.gson'
-//     relocate 'com.electronwill.nightconfig', 'fun.sakuraspark.sakuraupdater.shadow.com.electronwill.nightconfig'
-//     relocate 'org.slf4j', 'fun.sakuraspark.sakuraupdater.shadow.org.slf4j'
-// }
-
-// // 添加shadowJar作为build任务的依赖
-// tasks.named('build') {
-//     dependsOn tasks.named('shadowJar')
-// }
 
 // This block of code expands all declared replace properties in the specified resource targets.
 // A missing property will result in an error. Properties are expanded using ${} Groovy notation.
@@ -312,6 +214,15 @@ publishing {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }
+
+// 仅依赖 JDK 的集成测试，无需外部测试框架或公共仓库。
+tasks.register('dependencyManagerTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = files(sourceSets.test.output, sourceSets.main.output)
+    mainClass = 'fun.sakuraspark.sakuraupdater.PackageManagerTest'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+}
+tasks.named('check') { dependsOn tasks.named('dependencyManagerTest') }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
 idea {
