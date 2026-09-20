@@ -2,6 +2,7 @@ package fun.sakuraspark.sakuraupdater.mixin;
 
 import com.mojang.logging.LogUtils;
 
+import fun.sakuraspark.sakuraupdater.SakuraUpdaterClient;
 import fun.sakuraspark.sakuraupdater.gui.FixScreen;
 import fun.sakuraspark.sakuraupdater.gui.UpdateCheckScreen;
 import net.minecraft.client.gui.components.Button;
@@ -38,6 +39,8 @@ public class TitleScreenMixin extends net.minecraft.client.gui.screens.Screen {
         this.logoWidget.setX(0);
         this.addRenderableWidget(this.logoWidget);
         this.updateCheckButton = Button.builder(Component.translatable("gui.sakuraupdater.TitleScreen.checkupdate"), button -> {
+            // 玩家手动点进来的：重新查一次，不复用启动时预取的结果
+            SakuraUpdaterClient.getInstance().restartUpdateCheck();
             this.minecraft.setScreen(new UpdateCheckScreen());
         }).bounds(-60, 5, 60, 20).build();
         this.addRenderableWidget(this.updateCheckButton);
