@@ -18,6 +18,7 @@ import fun.sakuraspark.sakuraupdater.gui.UpdateScreen;
 import fun.sakuraspark.sakuraupdater.network.FileClient;
 import fun.sakuraspark.sakuraupdater.utils.FileUtils;
 import fun.sakuraspark.sakuraupdater.utils.MD5;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
@@ -36,6 +37,7 @@ import static net.minecraft.commands.Commands.*;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 public class SakuraUpdaterClient {
 
@@ -68,6 +70,11 @@ public class SakuraUpdaterClient {
     private int show_attempts = 0;
 
     private boolean debug = false; // 是否开启调试模式 
+
+    // ---- 启动预取：配置加载完就在后台把检查跑完，界面弹出时直接拿结果，不占玩家的等待时间 ----
+    private CompletableFuture<Integer> update_check = null; // 当前这次检查（1/2/3/-1，含义同 UpdateCheckScreen.updateStatus）
+    private boolean prefetch_started = false; // 预取整个进程只发起一次：配置 reload 不会再来一轮
+    private volatile boolean update_check_stale = false; // 玩家进过世界/刚更新完，旧结果不能再拿去显示
 
     SakuraUpdaterClient() {
         ModLoadingContext.get().getActiveContainer().registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
@@ -124,6 +131,80 @@ public class SakuraUpdaterClient {
             sb.append(data.description);
         }
         return sb.toString();
+    }
+
+    /** 启动预取：游戏还在加载时就把更新检查跑起来（配置加载完成后调用，整个进程只发起一次）。 */
+    public synchronized void prefetchUpdateCheck() {
+        if (prefetch_started) {
+            return;
+        }
+        prefetch_started = true;
+        LOGGER.info("SakuraUpdater: prefetching update check in the background, the game is still loading.");
+        startUpdateCheck();
+    }
+
+    /** 取检查结果：有可用的预取就复用，没有（或已经过期）就立刻起一次新的。 */
+    public synchronized CompletableFuture<Integer> getUpdateCheck() {
+        if (update_check == null || update_check_stale) {
+            startUpdateCheck();
+        }
+        return update_check;
+    }
+
+    /** 强制重新检查：玩家手动点“检查更新”或“重试”时用，不让旧结果顶替。 */
+    public synchronized CompletableFuture<Integer> restartUpdateCheck() {
+        startUpdateCheck();
+        return update_check;
+    }
+
+    /** 把当前结果标记为过期：玩家已经进过世界，或本地刚更新完一轮。 */
+    public void invalidateUpdateCheck() {
+        update_check_stale = true;
+    }
+
+    /**
+     * 发起一次检查。同一时刻只允许一份在跑：旧的还没结束时排在它后面，
+     * 否则两份检查会同时写最新版本号和待删/待下清单这批字段，界面可能显示这一份的版本却用另一份的清单。
+     */
+    private synchronized void startUpdateCheck() {
+        CompletableFuture<Integer> previous = update_check;
+        if (previous != null && !previous.isDone()) {
+            update_check = previous.handle((result, error) -> null).thenCompose(ignored -> runUpdateCheck());
+        } else {
+            update_check = runUpdateCheck();
+        }
+        update_check_stale = false;
+    }
+
+    /** 后台线程里的检查体：查版本 → 算本地文件校验 → 更新日志也一并取回来。 */
+    private CompletableFuture<Integer> runUpdateCheck() {
+        return CompletableFuture.supplyAsync(() -> {
+            long started = System.currentTimeMillis();
+            int result;
+            try {
+                int check = updateCheck();
+                if (check == -1) {
+                    result = -1;
+                } else if (check == 0) {
+                    result = 2;
+                } else {
+                    result = integrityCheck() ? 1 : 3;
+                    // 更新日志本来会在界面 init() 里于渲染线程同步请求一次，这里先在后台取好；
+                    // 取日志失败不影响这次检查的结论（界面会照旧自己重试一次）
+                    try {
+                        getChangeLogText();
+                    } catch (Exception e) {
+                        LOGGER.warn("SakuraUpdater: failed to prefetch the changelog.", e);
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.error("Error during update check", e);
+                result = -1;
+            }
+            LOGGER.info("SakuraUpdater: update check finished in {} ms, result {}.",
+                    System.currentTimeMillis() - started, result);
+            return result;
+        }, Util.backgroundExecutor());
     }
 
     public int updateCheck() {
@@ -264,6 +345,7 @@ public class SakuraUpdaterClient {
         if (download_failures == 0) {
             LOGGER.info("All files downloaded successfully.");
             ClientConfig.setNowVersion(last_update_data.version);
+            invalidateUpdateCheck(); // 本地已经更新完一轮，旧结果里的待删/待下清单不能再用于之后的显示
         }
     }
 
@@ -330,6 +412,11 @@ public class SakuraUpdaterClient {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level != null) {
+            // 玩家已经进了世界（例如快速进入/自动进服，我们的界面根本没弹过）：这份预取结果
+            // 之后不能再拿来显示，可能已经过了很久，甚至本地已经更新过一轮
+            invalidateUpdateCheck();
+        }
 
         if (show_state == ShowState.WAITING) {
             if (isOurScreen(minecraft.screen)) { // 玩家自己从标题界面的按钮打开了我们的界面

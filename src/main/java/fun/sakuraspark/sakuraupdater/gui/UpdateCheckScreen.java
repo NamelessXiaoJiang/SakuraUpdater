@@ -8,7 +8,6 @@ import com.mojang.logging.LogUtils;
 
 import fun.sakuraspark.sakuraupdater.SakuraUpdaterClient;
 import fun.sakuraspark.sakuraupdater.gui.components.MarkdownBox;
-import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -31,34 +30,22 @@ public class UpdateCheckScreen extends Screen {
 
     public UpdateCheckScreen() {
         super(Component.translatable("gui.sakuraupdater.UpdateCheckScreen"));
+        CompletableFuture<Integer> check = SakuraUpdaterClient.getInstance().getUpdateCheck();
+        if (check.isDone()) {
+            // 游戏加载期间已经查完了：首帧就是最终状态，不闪也不用重建控件
+            updateStatus = check.getNow(-1); // 只有已完成才会走到这里，检查体自己把异常兜成了 -1
+            LOGGER.info("SakuraUpdater: update check already finished during loading, showing result {} at once.",
+                    updateStatus);
+            return;
+        }
         LOGGER.info("start version checking...");
-        CompletableFuture.supplyAsync(() -> {
-            // 这里运行在后台线程中
-            try {
-                int result = SakuraUpdaterClient.getInstance().updateCheck();
-                if (result == -1) {
-                    return -1;
-                } else if (result == 0) {
-                    return 2; // No update
-                } else {
-                    if (SakuraUpdaterClient.getInstance().integrityCheck()) {
-                        return 1; // Need update
-                    }
-                    return 3; // Only server update
-                }
-            } catch (Exception e) {
-                LOGGER.error("Error during update check", e);
-                return -1;
+        check.thenAccept(result -> Minecraft.getInstance().execute(() -> {
+            updateStatus = result; // 更新状态
+            if (Minecraft.getInstance().screen == this) {
+                // 当状态变为1时，重建界面添加按钮；界面已经被玩家关掉就不用重建了
+                this.rebuildWidgets();
             }
-        }, Util.backgroundExecutor()) // 使用 Minecraft 的后台线程池
-                .thenAcceptAsync(result -> {
-                    // 回到主线程更新UI
-                    Minecraft.getInstance().execute(() -> {
-                        updateStatus = result; // 更新状态
-                        // 当状态变为1时，重建界面添加按钮
-                        this.rebuildWidgets();
-                    });
-                });
+        }));
     }
 
     @Override
@@ -72,7 +59,8 @@ public class UpdateCheckScreen extends Screen {
         if (updateStatus == -1) {
             this.addRenderableWidget(
                     Button.builder(Component.translatable("gui.sakuraupdater.UpdateCheckScreen.retry"), button -> {
-                        // 点击按钮后重新检查更新
+                        // 点击按钮后重新检查更新（手动重试不能复用启动时的预取结果）
+                        SakuraUpdaterClient.getInstance().restartUpdateCheck();
                         Minecraft.getInstance().setScreen(new UpdateCheckScreen());
                     }).bounds(this.width / 2 - 100, this.height - 50, 200, 20).build());
             this.addRenderableWidget(

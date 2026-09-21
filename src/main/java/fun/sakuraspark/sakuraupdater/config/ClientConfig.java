@@ -49,6 +49,8 @@ public class ClientConfig {
 		downloadConnections = DOWNLOAD_CONNECTIONS.get();
 		while (SakuraUpdaterClient.getInstance() == null);
 		SakuraUpdaterClient.getInstance().connectToServer();
+		// 游戏还在加载（资源重载/加载遮罩）时就把更新检查在后台跑起来，界面弹出时直接拿结果
+		SakuraUpdaterClient.getInstance().prefetchUpdateCheck();
 	}
 
 	public static int getDownloadConnections() {

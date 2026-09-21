@@ -62,6 +62,8 @@ public class UpdateScreen extends Screen {
                 this.addRenderableWidget(Button.builder(Component.translatable("gui.sakuraupdater.UpdateScreen.retry",
                         updateStatus), button -> {
                             if (whereFrom.equals("UpdateCheckScreen")) {
+                                // 重试要重新检查，不能复用启动时预取的结果（本地可能已经更新过一轮）
+                                SakuraUpdaterClient.getInstance().restartUpdateCheck();
                                 Minecraft.getInstance().setScreen(new UpdateCheckScreen());
                             } else if (whereFrom.equals("FixScreen")) {
                                 Minecraft.getInstance().setScreen(new FixScreen());
