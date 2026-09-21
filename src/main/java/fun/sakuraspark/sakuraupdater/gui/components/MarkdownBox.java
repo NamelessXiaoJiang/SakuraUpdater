@@ -2,7 +2,9 @@ package fun.sakuraspark.sakuraupdater.gui.components;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractScrollWidget;
+import net.minecraft.client.gui.narration.NarratedElementType;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.network.chat.Component;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 
@@ -12,6 +14,9 @@ import java.util.List;
 public class MarkdownBox extends AbstractScrollWidget {
     private String markdownText;
     private List<String> lines;
+    private boolean isScrollbarVisible=true;
+    private boolean isBackgroundVisible=true;
+    private int color = 0xFFFFFF;
 
     public MarkdownBox(int x, int y, int width, int height, String markdownText) {
         super(x, y, width, height, null);
@@ -47,7 +52,22 @@ public class MarkdownBox extends AbstractScrollWidget {
 
     @Override
     protected void updateWidgetNarration(NarrationElementOutput narrationElementOutput) {
-        this.defaultButtonNarrationText(narrationElementOutput);
+        narrationElementOutput.add(NarratedElementType.TITLE,Component.literal("update log"));
+    }
+
+    public void setColor(int color){
+        this.color = color;
+    }
+
+    public void setBackgroundVisible(boolean visible) {
+        this.isBackgroundVisible = visible;
+    }
+
+    @Override 
+    protected void renderBackground(GuiGraphics guiGraphics) {
+        if (this.isBackgroundVisible) {
+            this.renderBorder(guiGraphics, this.getX(), this.getY(), this.getWidth(), this.getHeight());
+        }
     }
 
     @Override
@@ -61,6 +81,18 @@ public class MarkdownBox extends AbstractScrollWidget {
         return 10.0; // 每次滚动10像素
     }
 
+    public void setScrollbarVisible(boolean visible) {
+        this.isScrollbarVisible = visible;
+    }
+
+    @Override 
+    protected boolean scrollbarVisible() {
+        if (!this.isScrollbarVisible) {
+            return false;
+        }
+        return this.getInnerHeight() > this.getHeight();
+    }
+
     @Override
     protected void renderContents(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         Font font = Minecraft.getInstance().font;
@@ -68,7 +100,7 @@ public class MarkdownBox extends AbstractScrollWidget {
 
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
-            guiGraphics.drawString(font, line, this.getX() + 4, this.getY() + 4 + yOffset, 0xFFFFFF);
+            guiGraphics.drawString(font, line, this.getX() + 4, this.getY() + 4 + yOffset, color, false);
             yOffset += font.lineHeight + 2;
         }
     }
