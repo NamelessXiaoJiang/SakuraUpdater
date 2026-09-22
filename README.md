@@ -153,7 +153,7 @@ When a player joins the game, the client will automatically check whether the se
 SakuraUpdater 是一个 Minecraft NeoForge 模组，用于自动更新服务器的 mod 文件，让玩家能够像其他游戏一样自动获取服务器更新。
 
 <div align="center">
-<img src="img/image2.png" width="500" alt="SakuraUpdater">
+<img src="img/image1.png" width="500" alt="SakuraUpdater">
 </div>
 
 ## 功能特性
