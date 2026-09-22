@@ -13,9 +13,24 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.renderer.CubeMap;
+import net.minecraft.client.renderer.PanoramaRenderer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 public class FixScreen extends Screen {
+    
+    public static final CubeMap CUBE_MAP = new CubeMap(new ResourceLocation("textures/gui/title/background/panorama"));
+
+    private final PanoramaRenderer panorama = new PanoramaRenderer(CUBE_MAP);
+    private boolean fading = true;
+    private long fadeInStart;
+    
+    private static final ResourceLocation BEACON_LOCATION = new ResourceLocation("minecraft", "textures/gui/container/beacon.png");
+    private static final ResourceLocation ICONS_LOCATION = new ResourceLocation("minecraft", "textures/gui/icons.png");
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
@@ -87,14 +102,35 @@ public class FixScreen extends Screen {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // // 渲染背景
-        // if (this.fadeInStart == 0L && this.fading) {
-        //     this.fadeInStart = Util.getMillis();
-        // }
-        // float f = this.fading ? (float) (Util.getMillis() - this.fadeInStart) / 1000.0F : 1.0F;
-        // this.panorama.render(partialTick, Mth.clamp(f, 0.0F, 1.0F));
-        // guiGraphics.fill(0, 0, this.width, this.height, 0x20000000);
+        // 渲染背景
+        if (this.fadeInStart == 0L && this.fading) {
+            this.fadeInStart = Util.getMillis();
+        }
+        float f = this.fading ? (float) (Util.getMillis() - this.fadeInStart) / 1000.0F : 1.0F;
+        this.panorama.render(partialTick, Mth.clamp(f, 0.0F, 1.0F));
+        guiGraphics.fill(0, 0, this.width, this.height, 0x20000000);
         super.render(guiGraphics, mouseX, mouseY, partialTick);
+
+        float scale = 3.0f; // 缩放因子
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().translate(this.width / 2 - (16 * scale) / 2, this.height / 4 - (16 * scale) / 2, 0);
+        guiGraphics.pose().scale(scale, scale, 0f);
+        if (fixStatus == 1 || fixStatus == 2) { // 显示书
+            ItemStack stack = new ItemStack(Items.BOOK);
+            guiGraphics.renderItem(stack, 0, 0);
+        } else if (fixStatus == -1) {// 出错时显示土豆服务器加ping unknown
+            ItemStack stack = new ItemStack(Items.POISONOUS_POTATO);
+            guiGraphics.renderItem(stack, 0, 0);
+        }
+        guiGraphics.pose().popPose();
+
+        if (fixStatus == 1) {
+            guiGraphics.blit(BEACON_LOCATION, this.width / 2 + 5, this.height / 4 + 5, 112, 220, 18, 18, 256, 256); // 红色叉号
+        } else if (fixStatus == 2) {
+            guiGraphics.blit(BEACON_LOCATION, this.width / 2 + 5, this.height / 4 + 5, 90, 220, 18, 18, 256, 256); // 绿色对勾
+        } else if (fixStatus == -1) {
+            guiGraphics.blit(ICONS_LOCATION, this.width / 2 + 10, this.height / 4 + 10, 0, 216, 10, 8, 256, 256); // ping unknown
+        }
 
         if (fixStatus == 0) {
             guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, this.height / 2, 16777215);

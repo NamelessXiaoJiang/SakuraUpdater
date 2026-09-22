@@ -16,6 +16,8 @@ import net.minecraft.client.renderer.PanoramaRenderer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 public class UpdateScreen extends Screen {
 
@@ -24,6 +26,8 @@ public class UpdateScreen extends Screen {
     private final PanoramaRenderer panorama = new PanoramaRenderer(CUBE_MAP);
     private boolean fading = true;
     private long fadeInStart;
+    
+    private static final ResourceLocation BEACON_LOCATION = new ResourceLocation("minecraft", "textures/gui/container/beacon.png");
 
     // 缓动控制
     private float currentProgress = 0.0f;
@@ -131,6 +135,25 @@ public class UpdateScreen extends Screen {
         guiGraphics.fill(0, 0, this.width, this.height, 0x20000000);
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
+        float scale = 3.0f; // 缩放因子
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().translate(this.width / 2 - (16 * scale) / 2, this.height / 4 - (16 * scale) / 2, 0);
+        guiGraphics.pose().scale(scale, scale, 0f);
+        if (updateStatus == -1) { // 正在下载更新时显示附魔书加闪烁
+            ItemStack stack = new ItemStack(Items.ENCHANTED_BOOK);
+            guiGraphics.renderItem(stack, 0, 0);
+        } else { // 出错和完成时显示普通附魔书
+            ItemStack stack = new ItemStack(Items.BOOK);
+            guiGraphics.renderItem(stack, 0, 0);
+        }
+        guiGraphics.pose().popPose();
+
+        if (updateStatus != -1 && updateStatus == 0) {
+            guiGraphics.blit(BEACON_LOCATION, this.width / 2 + 5, this.height / 4 + 5, 90, 220, 18, 18, 256, 256); // 绿色对勾
+        } else if (updateStatus != -1 && updateStatus > 0) {
+            guiGraphics.blit(BEACON_LOCATION, this.width / 2 + 5, this.height / 4 + 5, 112, 220, 18, 18, 256, 256); // 红色叉号
+        }
+
         Pair<Integer, Integer> progress = SakuraUpdaterClient.getInstance().getUpdateProgress();
         if (progress.getSecond() >= 0) {
             // 绘制进度条
@@ -145,7 +168,7 @@ public class UpdateScreen extends Screen {
                 guiGraphics.drawCenteredString(this.font,
                         Component.translatable("gui.sakuraupdater.UpdateScreen.failed",
                                 updateStatus),
-                        this.width / 2, this.height / 2, 16777215);
+                        this.width / 2, this.height / 2, 16711680); // Red color for failed
             }
 
         } else {
