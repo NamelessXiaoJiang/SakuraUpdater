@@ -42,7 +42,16 @@ public class ServerCommandsHelper {
 
     // ---- data edit ----
     public static CommandResult editData(String version, String description) {
-        if (!DataConfig.editData(version, description)) {
+        String fileContent = null; // 如果 description 是文件路径，则读取文件内容
+        if (new File(description).exists()) {
+            try {
+                fileContent = Files.readString(Path.of(description));
+            } catch (IOException e) {
+                return CommandResult.failure(
+                        "Description file is exist but failed to read description file: " + e.getMessage());
+            }
+        }
+        if (!DataConfig.editData(version, fileContent != null ? fileContent : description.replace("\\n", "\n"))) {
             return CommandResult.failure("Failed to edit data: version not found.");
         }
         return CommandResult.success("SakuraUpdater updated the description of version " + version

@@ -11,7 +11,11 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 public class UpdateScreen extends Screen {
 
@@ -20,6 +24,9 @@ public class UpdateScreen extends Screen {
     // private final PanoramaRenderer panorama = new PanoramaRenderer(CUBE_MAP);
     // private boolean fading = true;
     // private long fadeInStart;
+    
+    public static final ResourceLocation CONFIRM_LOCATION = ResourceLocation.withDefaultNamespace("textures/gui/sprites/container/beacon/confirm.png");
+    public static final ResourceLocation CANCEL_LOCATION = ResourceLocation.withDefaultNamespace("textures/gui/sprites/container/beacon/cancel.png");
 
     // 缓动控制
     private float currentProgress = 0.0f;
@@ -119,13 +126,27 @@ public class UpdateScreen extends Screen {
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
-        // // 渲染背景
-        // if (this.fadeInStart == 0L && this.fading) {
-        //     this.fadeInStart = Util.getMillis();
-        // }
-        // float f = this.fading ? (float) (Util.getMillis() - this.fadeInStart) / 1000.0F : 1.0F;
-        // this.panorama.render(partialTick, Mth.clamp(f, 0.0F, 1.0F));
-        // guiGraphics.fill(0, 0, this.width, this.height, 0x20000000);
+
+        float scale = 3.0f; // 缩放因子
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().translate(this.width / 2 - (16 * scale) / 2, this.height / 4 - (16 * scale) / 2, 0);
+        guiGraphics.pose().scale(scale, scale, 0f);
+        if (updateStatus == -1) { // 正在下载更新时显示附魔书加闪烁
+            ItemStack stack = new ItemStack(Items.ENCHANTED_BOOK);
+            stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+            guiGraphics.renderItem(stack, 0, 0);
+        } else { // 出错和完成时显示普通附魔书
+            ItemStack stack = new ItemStack(Items.ENCHANTED_BOOK);
+            stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, false);
+            guiGraphics.renderItem(stack, 0, 0);
+        }
+        guiGraphics.pose().popPose();
+
+        if (updateStatus !=-1 && updateStatus ==0) {
+            guiGraphics.blit(CONFIRM_LOCATION, this.width / 2+5, this.height / 4+5, 0, 0, 18, 18, 18, 18); // 绘制绿色对勾
+        } else if (updateStatus != -1 && updateStatus > 0) {
+            guiGraphics.blit(CANCEL_LOCATION, this.width / 2+5, this.height / 4+5, 0, 0, 18, 18, 18, 18); // 绘制ping unknown图标
+        }
 
         Pair<Integer, Integer> progress = SakuraUpdaterClient.getInstance().getUpdateProgress();
         if (progress.getSecond() >= 0) {
@@ -141,7 +162,7 @@ public class UpdateScreen extends Screen {
                 guiGraphics.drawCenteredString(this.font,
                         Component.translatable("gui.sakuraupdater.UpdateScreen.failed",
                                 updateStatus),
-                        this.width / 2, this.height / 2, 16777215);
+                        this.width / 2, this.height / 2, 16711680); // Red color for failed
             }
 
         } else {

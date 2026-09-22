@@ -48,6 +48,8 @@ public class SakuraUpdaterClient {
     private Data last_update_data = null; // 上次更新的数据
     private Data current_update_data = null; // 当前更新的数据，只有存在push时才会有
     private List<Data> changelog = null; // 更新日志（从当前版本到最新版本）
+    // 无文件变化时本地版本会提前更新，日志请求和重试仍需使用本次检查开始时的版本。
+    private String changelogFromVersion;
 
     private Pair<Integer, Integer> update_progress = new Pair<>(-1, -1); // 更新进度
     private int download_failures = -1; // 更新失败次数
@@ -103,7 +105,8 @@ public class SakuraUpdaterClient {
      */
     public List<Data> getChangeLog() {
         if (changelog == null) {
-            changelog = file_client.getChangeLog(ClientConfig.getNowVersion());
+            changelog = file_client.getChangeLog(changelogFromVersion != null
+                    ? changelogFromVersion : ClientConfig.getNowVersion());
             if (changelog == null) {
                 LOGGER.error("Failed to fetch changelog from server.");
                 return null;
@@ -208,6 +211,7 @@ public class SakuraUpdaterClient {
     }
 
     public int updateCheck() {
+        changelogFromVersion = ClientConfig.getNowVersion();
         last_update_data = null; // 重置上次更新数据，强制重新获取
         changelog = null; // 重置更新日志，强制重新获取
         if (getLastUpdateData() == null) {

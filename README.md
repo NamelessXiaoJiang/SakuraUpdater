@@ -111,7 +111,7 @@ now_version = ""
 **Example:**
 `/sakuraupdater commit v1.0.1 Fixed item duplication bug\nAdded new enchantments`
 
-**Or using a text file (minimal markdown supported):**
+**Or using a text file (commonly used markdown supported):**
 `/sakuraupdater commit v1.0.1 description.md`
 
 #### Manage data versions
@@ -254,7 +254,7 @@ now_version = ""
 **例如:**
 `/sakuraupdater commit v1.0.1 修复了物品复制bug\n添加了新的附魔`
 
-**或使用文本文件(极少的md格式支持):**
+**或使用文本文件(常见的md格式支持):**
 `/sakuraupdater commit v1.0.1 description.md`
 
 #### 管理数据版本
