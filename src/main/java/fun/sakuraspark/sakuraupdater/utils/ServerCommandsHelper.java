@@ -83,9 +83,20 @@ public class ServerCommandsHelper {
         if (!DataConfig.updateFiles(version, pathData)) {
             return CommandResult.failure("Failed to write the rebuilt file list back to version " + version + ".");
         }
-        int fileCount = pathData.stream().mapToInt(p -> p.files == null ? 0 : p.files.size()).sum();
+        int fileCount = 0;
+        long totalBytes = 0;
+        for (PathData path : pathData) {
+            if (path.files == null) {
+                continue;
+            }
+            fileCount += path.files.size();
+            for (FileData file : path.files) {
+                totalBytes += file.size;
+            }
+        }
         return CommandResult.success("SakuraUpdater repaired version " + version + ": rebuilt " + pathData.size()
-                + " path(s) / " + fileCount + " file(s) from the current sync directories. "
+                + " path(s) / " + fileCount + " file(s), " + FileUtils.formatSize(totalBytes)
+                + " in total, from the current sync directories. "
                 + "Description and time were left untouched.");
     }
 
@@ -132,6 +143,8 @@ public class ServerCommandsHelper {
                         .append(file.sourcePath)
                         .append(", ")
                         .append(file.md5)
+                        .append(", ")
+                        .append(file.size > 0 ? FileUtils.formatSize(file.size) : "size unknown")
                         .append(")\n");
             }
             dataList.append("]\n");
@@ -226,6 +239,8 @@ public class ServerCommandsHelper {
                     fileData.sourcePath = file.toString().replace(File.separator, "/");
                     fileData.targetPath = file.toString().replace(source, targetPath).replace(File.separator, "/");
                     fileData.md5 = MD5.calculateMD5(file);
+                    // 体积随清单一起下发，客户端才能按字节显示更新进度（旧清单里这个字段是 0，客户端会自己探测）
+                    fileData.size = file.length();
                     data.files.add(fileData);
                 });
             }

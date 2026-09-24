@@ -2,9 +2,8 @@ package fun.sakuraspark.sakuraupdater.gui;
 
 import java.util.concurrent.CompletableFuture;
 
-import com.mojang.datafixers.util.Pair;
-
 import fun.sakuraspark.sakuraupdater.SakuraUpdaterClient;
+import fun.sakuraspark.sakuraupdater.utils.FileUtils;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -94,13 +93,22 @@ public class UpdateScreen extends Screen {
         }
     }
 
-    public void drawProgressBar(GuiGraphics guiGraphics, int X, int Y, int width, int height, int min, int max,
+    /**
+     * 进度条口径：只有下载阶段才按字节推进，探测体积 / 删旧文件这两个阶段不产生字节，条停在 0。
+     * 下载结束（DONE）后条保持在最终位置，和"更新完成"的文案一起看。
+     */
+    private static boolean isBytePhase(SakuraUpdaterClient.UpdatePhase phase) {
+        return phase == SakuraUpdaterClient.UpdatePhase.DOWNLOADING
+                || phase == SakuraUpdaterClient.UpdatePhase.DONE;
+    }
+
+    public void drawProgressBar(GuiGraphics guiGraphics, int X, int Y, int width, int height, long done, long total,
             float partialTick) {
-        if (max <= 0)
+        if (total <= 0)
             return;
 
         // 计算目标进度
-        float targetProgress = (float) min / max;
+        float targetProgress = (float) Math.min(1.0, (double) done / (double) total);
 
         // 使用线性插值进行缓动
         float progressDiff = targetProgress - currentProgress;
@@ -120,6 +128,50 @@ public class UpdateScreen extends Screen {
 
         if (progressWidth > 0) {
             guiGraphics.fill(X + 2, Y + 2, X + 2 + progressWidth, Y + height - 2, 0xFFFFFFFF);
+        }
+    }
+
+    /** 进度条下面那几行字：当前在做什么、已下载多少、还剩多少、速度多快 */
+    private void drawProgressText(GuiGraphics guiGraphics, SakuraUpdaterClient.UpdateProgress progress) {
+        int centerX = this.width / 2;
+        int y = this.height / 2 + 44;
+        switch (progress.phase) {
+            case PREPARING -> guiGraphics.drawCenteredString(this.font,
+                    Component.translatable("gui.sakuraupdater.UpdateScreen.preparing", progress.doneFiles,
+                            progress.totalFiles),
+                    centerX, y, 16777215);
+            case DELETING -> guiGraphics.drawCenteredString(this.font,
+                    Component.translatable("gui.sakuraupdater.UpdateScreen.deleting", progress.doneFiles,
+                            progress.totalFiles),
+                    centerX, y, 16777215);
+            case DOWNLOADING -> {
+                // 清单里有文件没带体积时总量只是下限，用"≥"标出来，免得看起来像算错了
+                Component total = progress.totalKnown
+                        ? Component.literal(FileUtils.formatSize(progress.totalBytes))
+                        : Component.translatable("gui.sakuraupdater.UpdateScreen.atleast",
+                                FileUtils.formatSize(progress.totalBytes));
+                guiGraphics.drawCenteredString(this.font,
+                        Component.translatable("gui.sakuraupdater.UpdateScreen.downloaded",
+                                FileUtils.formatSize(progress.doneBytes), total),
+                        centerX, y, 16777215);
+                long remaining = Math.max(0, progress.totalBytes - progress.doneBytes);
+                int percent = progress.totalBytes > 0
+                        ? (int) Math.min(100, progress.doneBytes * 100 / progress.totalBytes)
+                        : 0;
+                guiGraphics.drawCenteredString(this.font,
+                        Component.translatable("gui.sakuraupdater.UpdateScreen.remaining",
+                                FileUtils.formatSize(remaining), percent),
+                        centerX, y + 12, 16777215);
+                if (progress.bytesPerSecond > 0) {
+                    guiGraphics.drawCenteredString(this.font,
+                            Component.translatable("gui.sakuraupdater.UpdateScreen.speed",
+                                    FileUtils.formatSize(progress.bytesPerSecond),
+                                    FileUtils.formatDuration(remaining / progress.bytesPerSecond)),
+                            centerX, y + 24, 11184810);
+                }
+            }
+            default -> {
+            }
         }
     }
 
@@ -148,11 +200,11 @@ public class UpdateScreen extends Screen {
             guiGraphics.blit(CANCEL_LOCATION, this.width / 2+5, this.height / 4+5, 0, 0, 18, 18, 18, 18); // 绘制ping unknown图标
         }
 
-        Pair<Integer, Integer> progress = SakuraUpdaterClient.getInstance().getUpdateProgress();
-        if (progress.getSecond() >= 0) {
-            // 绘制进度条
-            this.drawProgressBar(guiGraphics, this.width / 2 - 100, this.height / 2 + 20, 200, 20, progress.getFirst(),
-                    progress.getSecond(), partialTick);
+        SakuraUpdaterClient.UpdateProgress progress = SakuraUpdaterClient.getInstance().getUpdateProgress();
+        if (progress.phase != SakuraUpdaterClient.UpdatePhase.IDLE) {
+            boolean byBytes = isBytePhase(progress.phase);
+            this.drawProgressBar(guiGraphics, this.width / 2 - 100, this.height / 2 + 20, 200, 20,
+                    byBytes ? progress.doneBytes : 0L, byBytes ? progress.totalBytes : 0L, partialTick);
         }
 
         if (updateStatus != -1) {
@@ -167,6 +219,8 @@ public class UpdateScreen extends Screen {
 
         } else {
             guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, this.height / 2, 16777215);
+            // 更新进行中才画这几行；完成/失败态要留给下面的按钮位置（height/2 + 50 起）
+            this.drawProgressText(guiGraphics, progress);
         }
     }
 }
