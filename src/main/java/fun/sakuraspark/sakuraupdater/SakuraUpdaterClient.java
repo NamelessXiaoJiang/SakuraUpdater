@@ -38,6 +38,10 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class SakuraUpdaterClient {
 
@@ -51,7 +55,59 @@ public class SakuraUpdaterClient {
     // 无文件变化时本地版本会提前更新，日志请求和重试仍需使用本次检查开始时的版本。
     private String changelogFromVersion;
 
-    private Pair<Integer, Integer> update_progress = new Pair<>(-1, -1); // 更新进度
+    // ---- 更新进度：后台线程记账，渲染线程每帧读一份不可变快照 ----
+    /** 更新进行到哪一步：界面用它决定进度条的口径和提示文案 */
+    public enum UpdatePhase {
+        IDLE, // 没有可显示的进度
+        PREPARING, // 清单里没有体积，正在向服务端探测各文件大小
+        DELETING, // 正在清理旧文件（不产生体积，进度条停在 0）
+        DOWNLOADING, // 按字节推进
+        DONE // 下载阶段已经结束
+    }
+
+    /** 给界面看的不可变进度快照 */
+    public static final class UpdateProgress {
+        public final UpdatePhase phase;
+        public final long doneBytes; // 已下载的字节数
+        public final long totalBytes; // 需要下载的字节数；有文件体积未知时只是下限
+        public final boolean totalKnown; // 分母是否完整（缺体积的文件都靠探测或实际落盘大小补上了）
+        public final int doneFiles; // 当前阶段已完成 / 已探测的文件数
+        public final int totalFiles; // 当前阶段的文件总数
+        public final long bytesPerSecond; // 平滑后的下载速度，0 表示还没测出
+
+        UpdateProgress(UpdatePhase phase, long doneBytes, long totalBytes, boolean totalKnown, int doneFiles,
+                int totalFiles, long bytesPerSecond) {
+            this.phase = phase;
+            this.doneBytes = doneBytes;
+            this.totalBytes = totalBytes;
+            this.totalKnown = totalKnown;
+            this.doneFiles = doneFiles;
+            this.totalFiles = totalFiles;
+            this.bytesPerSecond = bytesPerSecond;
+        }
+    }
+
+    /** 进度记账，只在检查/探测/下载这些后台线程上改；改完由 publishProgress 换成快照给界面 */
+    private static final class ProgressState {
+        UpdatePhase phase = UpdatePhase.IDLE;
+        long totalBytes;
+        int unknownFiles; // 体积还未知的待下文件数，> 0 时总量只是下限
+        int doneFiles;
+        int totalFiles;
+        long bytesPerSecond;
+        long speedWindowStartMs; // 速度采样窗口，0 表示需要重新开始采样
+        long speedWindowBytes;
+    }
+
+    private static final long PUBLISH_INTERVAL_MS = 50; // 快照刷新间隔，免得每读一个 8KB 就建一个对象
+    private static final long SPEED_WINDOW_MS = 500; // 速度采样窗口
+
+    private final ProgressState progress_state = new ProgressState();
+    /** 已计入的下载字节。重试/回退/校验失败时回调会给负增量，所以这里用累加而不是递增 */
+    private final AtomicLong received_bytes = new AtomicLong();
+    private volatile UpdateProgress update_progress = new UpdateProgress(UpdatePhase.IDLE, 0, 0, true, 0, 0, 0);
+    private long last_publish_ms;
+
     private int download_failures = -1; // 更新失败次数
     Pair<List<File>, List<FileData>> integrityCheckResult;
 
@@ -228,7 +284,7 @@ public class SakuraUpdaterClient {
     public boolean integrityCheck() {
         //TODO: this shit needs to be rebuild！
         //TODO: 先删除在下载有点危险
-        update_progress = new Pair<>(-1, -1); // 重置进度
+        resetProgress(); // 重置进度
         integrityCheckResult = new Pair<List<File>, List<FileData>>(new ArrayList<>(), new ArrayList<>());
         if (getLastUpdateData() == null) {
             return false;
@@ -310,13 +366,35 @@ public class SakuraUpdaterClient {
         download_failures = -1; // 重置失败次数
         if (integrityCheckResult.getFirst().isEmpty() && integrityCheckResult.getSecond().isEmpty()) {
             LOGGER.info("No files to remove or download.");
-            update_progress = new Pair<>(0, 0);
+            resetProgress();
             ClientConfig.setNowVersion(last_update_data.version); // 不需要更新文件但是还是需要更新本地版本号
             return false;
         }
 
-        update_progress = new Pair<>(0,
-                integrityCheckResult.getFirst().size() + integrityCheckResult.getSecond().size()); // 更新进度
+        // 体积：清单里带 size 就能直接算出来，不用再多问服务端一句。
+        // 本改动之前 commit/repair 出来的清单（以及旧服务端）没有 size，留给下载前那轮探测兜底。
+        long totalBytes = 0;
+        int unknownFiles = 0;
+        for (FileData fileData : integrityCheckResult.getSecond()) {
+            if (fileData.size > 0) {
+                totalBytes += fileData.size;
+            } else {
+                unknownFiles++;
+            }
+        }
+        synchronized (this) {
+            progress_state.phase = UpdatePhase.IDLE;
+            progress_state.totalBytes = totalBytes;
+            progress_state.unknownFiles = unknownFiles;
+            progress_state.doneFiles = 0;
+            progress_state.totalFiles = integrityCheckResult.getSecond().size();
+            progress_state.bytesPerSecond = 0;
+            progress_state.speedWindowStartMs = 0;
+            publishProgress(true);
+        }
+        LOGGER.info("SakuraUpdater: {} file(s) to download, {} to delete, total {}, {} file(s) without a known size.",
+                integrityCheckResult.getSecond().size(), integrityCheckResult.getFirst().size(),
+                FileUtils.formatSize(totalBytes), unknownFiles);
         return true;
     }
 
@@ -324,28 +402,76 @@ public class SakuraUpdaterClient {
         if (download_failures == -1) {
             download_failures = 0;
         }
-        // 删除不需要的文件
-        integrityCheckResult.getFirst().forEach(file -> {
+        if (integrityCheckResult == null) {
+            LOGGER.error("downloadUpdate() was called before integrityCheck(), nothing to do.");
+            return;
+        }
+        List<File> toDelete = integrityCheckResult.getFirst();
+        List<FileData> toDownload = integrityCheckResult.getSecond();
+
+        // 清单里没有体积时先探一遍，否则界面给不出"总共需要多少"这个数。
+        // 服务端换成带 size 的清单之后这一步是空转（零请求）。
+        boolean needsSizeProbe;
+        synchronized (this) {
+            needsSizeProbe = progress_state.unknownFiles > 0;
+        }
+        if (needsSizeProbe) {
+            prepareSizes(toDownload);
+        }
+
+        // 删除不需要的文件。删文件不产生体积，所以进度条停在 0，只报"第几个"。
+        synchronized (this) {
+            progress_state.phase = UpdatePhase.DELETING;
+            progress_state.doneFiles = 0;
+            progress_state.totalFiles = toDelete.size();
+            publishProgress(true);
+        }
+        for (File file : toDelete) {
             if (file.delete()) {
                 LOGGER.info("Deleted file: {}", file);
-                update_progress = new Pair<>(update_progress.getFirst() + 1, update_progress.getSecond());
             } else {
                 LOGGER.error("Failed to delete file: {}", file);
-                update_progress = new Pair<>(update_progress.getFirst() + 1, update_progress.getSecond());
             }
-        });
+            synchronized (this) {
+                progress_state.doneFiles++;
+                publishProgress(false);
+            }
+        }
 
         // 下载需要的文件
-        integrityCheckResult.getSecond().forEach(fileData -> {
+        synchronized (this) {
+            progress_state.phase = UpdatePhase.DOWNLOADING;
+            progress_state.doneFiles = 0;
+            progress_state.totalFiles = toDownload.size();
+            progress_state.bytesPerSecond = 0;
+            progress_state.speedWindowStartMs = 0; // 删除阶段不产生字节，速度窗口从下载开始重新采
+            publishProgress(true);
+        }
+        for (FileData fileData : toDownload) {
             if (file_client.downloadFile(fileData.sourcePath, fileData.targetPath, fileData.md5,
-                    ClientConfig.getDownloadConnections())) {
+                    ClientConfig.getDownloadConnections(), byteListener)) {
                 LOGGER.info("Downloaded file: {}", fileData.sourcePath);
+                long actualSize = new File(fileData.targetPath).length();
+                synchronized (this) {
+                    if (fileData.size <= 0) {
+                        progress_state.unknownFiles--;
+                    }
+                    // 用实际落盘大小修正分母：服务端记错体积、或清单里没有体积时，进度条会随着下载自我修正
+                    progress_state.totalBytes += actualSize - Math.max(0, fileData.size);
+                }
             } else {
                 download_failures++;
                 LOGGER.error("Failed to download file: {}", fileData.sourcePath);
             }
-            update_progress = new Pair<>(update_progress.getFirst() + 1, update_progress.getSecond());
-        });
+            synchronized (this) {
+                progress_state.doneFiles++;
+                publishProgress(true);
+            }
+        }
+        synchronized (this) {
+            progress_state.phase = UpdatePhase.DONE;
+            publishProgress(true);
+        }
         if (download_failures == 0) {
             LOGGER.info("All files downloaded successfully.");
             ClientConfig.setNowVersion(last_update_data.version);
@@ -353,7 +479,107 @@ public class SakuraUpdaterClient {
         }
     }
 
-    public Pair<Integer, Integer> getUpdateProgress() {
+    /**
+     * 并发探测清单里没有体积的文件（每个文件一次 Range: bytes=0-0），把体积补进分母。
+     * 探不到的保持未知：总量会显示成下限，等文件真的下完再用实际大小补上。
+     */
+    private void prepareSizes(List<FileData> toDownload) {
+        List<FileData> unknown = new ArrayList<>();
+        for (FileData fileData : toDownload) {
+            if (fileData.size <= 0) {
+                unknown.add(fileData);
+            }
+        }
+        if (unknown.isEmpty()) {
+            return;
+        }
+        LOGGER.info("SakuraUpdater: probing the size of {} file(s) before downloading.", unknown.size());
+        synchronized (this) {
+            progress_state.phase = UpdatePhase.PREPARING;
+            progress_state.doneFiles = 0;
+            progress_state.totalFiles = unknown.size();
+            publishProgress(true);
+        }
+        int threads = Math.min(Math.max(1, ClientConfig.getDownloadConnections()), unknown.size());
+        ExecutorService pool = Executors.newFixedThreadPool(threads, r -> {
+            Thread thread = new Thread(r, "sakuraupdater-size");
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (FileData fileData : unknown) {
+                futures.add(pool.submit(() -> onSizeProbed(fileData, file_client.probeRemoteSize(fileData.sourcePath))));
+            }
+            for (Future<?> future : futures) {
+                try {
+                    future.get();
+                } catch (Exception e) {
+                    LOGGER.warn("Size probe task failed: {}", e.toString());
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /** 一个文件的体积探完了：>= 0 表示探到了（0 是空文件），-1 表示只能留给下载阶段补 */
+    private synchronized void onSizeProbed(FileData fileData, long size) {
+        if (size >= 0) {
+            fileData.size = size;
+            progress_state.totalBytes += size;
+            progress_state.unknownFiles--;
+        }
+        progress_state.doneFiles++;
+        publishProgress(true);
+    }
+
+    /** 下载线程的字节回调：只有真正落盘的文件会留下已计入的字节，重试/回退/校验失败会给负增量 */
+    private final FileClient.ByteProgressListener byteListener = delta -> {
+        received_bytes.addAndGet(delta);
+        publishProgress(false); // 8 个分块线程都会进来，publishProgress 内部按 PUBLISH_INTERVAL_MS 节流
+    };
+
+    private void resetProgress() {
+        synchronized (this) {
+            progress_state.phase = UpdatePhase.IDLE;
+            progress_state.totalBytes = 0;
+            progress_state.unknownFiles = 0;
+            progress_state.doneFiles = 0;
+            progress_state.totalFiles = 0;
+            progress_state.bytesPerSecond = 0;
+            progress_state.speedWindowStartMs = 0;
+            received_bytes.set(0);
+            publishProgress(true);
+        }
+    }
+
+    /** 把当前记账换成一份不可变快照给渲染线程；速度在这里按 500ms 窗口做指数滑动平均 */
+    private synchronized void publishProgress(boolean force) {
+        long now = System.currentTimeMillis();
+        if (!force && now - last_publish_ms < PUBLISH_INTERVAL_MS) {
+            return;
+        }
+        last_publish_ms = now;
+        if (progress_state.speedWindowStartMs == 0) {
+            progress_state.speedWindowStartMs = now;
+            progress_state.speedWindowBytes = received_bytes.get();
+        }
+        long elapsed = now - progress_state.speedWindowStartMs;
+        if (elapsed >= SPEED_WINDOW_MS) {
+            long bytes = received_bytes.get();
+            long instant = Math.max(0, bytes - progress_state.speedWindowBytes) * 1000 / elapsed;
+            progress_state.bytesPerSecond = progress_state.bytesPerSecond == 0 ? instant
+                    : (instant * 3 + progress_state.bytesPerSecond * 7) / 10;
+            progress_state.speedWindowStartMs = now;
+            progress_state.speedWindowBytes = bytes;
+        }
+        update_progress = new UpdateProgress(progress_state.phase, received_bytes.get(),
+                progress_state.totalBytes, progress_state.unknownFiles == 0, progress_state.doneFiles,
+                progress_state.totalFiles, progress_state.bytesPerSecond);
+    }
+
+    public UpdateProgress getUpdateProgress() {
         return update_progress;
     }
 
