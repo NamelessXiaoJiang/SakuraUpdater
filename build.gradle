@@ -224,6 +224,25 @@ tasks.register('dependencyManagerTest', JavaExec) {
 }
 tasks.named('check') { dependsOn tasks.named('dependencyManagerTest') }
 
+// 下载进度记账的集成测试。FileClient 要用 gson 构造请求体、用 slf4j 打日志，
+// 所以这个任务比 dependencyManagerTest 多两个依赖（版本与 PackageManager 运行时下载的一致）。
+configurations {
+    downloadProgressTestRuntime
+}
+dependencies {
+    downloadProgressTestRuntime 'com.google.code.gson:gson:2.10'
+    downloadProgressTestRuntime 'org.slf4j:slf4j-api:2.0.9'
+    // 让测试里的 FileClient 日志真的打出来：下载失败时能直接看到原因
+    downloadProgressTestRuntime 'org.slf4j:slf4j-simple:2.0.9'
+}
+tasks.register('downloadProgressTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = files(sourceSets.test.output, sourceSets.main.output) + configurations.downloadProgressTestRuntime
+    mainClass = 'fun.sakuraspark.sakuraupdater.FileClientProgressTest'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+}
+tasks.named('check') { dependsOn tasks.named('downloadProgressTest') }
+
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
 idea {
     module {
