@@ -34,6 +34,7 @@ public class DataConfig {
         public String sourcePath; // 相对路径
         public String targetPath; // 目标路径
         public String md5; // 文件MD5
+        public long size; // 文件字节数；0 表示未知（本次改动之前 commit/repair 出来的清单，或旧服务端）
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DataConfig.class);
