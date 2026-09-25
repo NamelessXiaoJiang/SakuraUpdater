@@ -137,16 +137,6 @@ now_version = ""
 /sakuraupdater data clear
 ```
 
-> `data repair <version>` is for versions whose file list is empty — for example versions damaged by an older build's `data edit` bug, or versions that were never committed properly. It keeps the description and timestamp, so the order of your update log does not change. Note that it records the **current** contents of your sync directories, not a historical snapshot of that release.
-
-#### File sizes and the update progress bar
-
-The committed file list carries each file's size, which is what the client's update screen uses to show `total / downloaded / remaining` and to move the progress bar by bytes instead of by file count.
-
-- A version committed by a **newer** server is already fine.
-- A version committed by an **older** server has no sizes in its file list. The client then probes each file with a `Range: bytes=0-0` request before downloading (a short extra step), so byte progress still works — but the total can only be shown as a lower bound until a file finishes.
-- To get the cleaner path, run `/sakuraupdater data repair <version>` on the version players are updating **to** (normally the newest one) after upgrading the server. `data show <version>` prints each file's size, so you can confirm the sizes are there. Only do this for the newest version: repair records the *current* contents of your sync directories.
-
 ### 2. Client player operations
 
 #### Automatic update check
@@ -288,16 +278,6 @@ now_version = ""
 # 清空所有版本数据
 /sakuraupdater data clear
 ```
-
-> `data repair <版本>` 用于文件清单为空的版本——例如被旧版本 `data edit` 的 bug 清空过的版本，或当时没 commit 好的版本。它会保留描述与时间戳，所以不会打乱更新日志的顺序。注意：它记录的是**当前**同步目录里的内容，不是那一版当时的历史快照。
-
-#### 文件体积与更新进度条
-
-commit 出来的文件清单会带上每个文件的体积。客户端的更新界面靠它显示"总共需要 / 已下载 / 剩余"，并按字节而不是按文件个数推进进度条。
-
-- 用**新版服务端** commit 的版本直接就是好的。
-- 用**旧版服务端** commit 的版本，清单里没有体积。客户端会在下载前对每个文件发一个 `Range: bytes=0-0` 探测（多一个很短的准备阶段），字节进度依然可用，只是文件下载完成前总量只能显示成下限。
-- 想要干净的正路径：升级服务端后，对玩家要更新**到**的那个版本（通常就是最新版）跑一次 `/sakuraupdater data repair <版本>`。`data show <版本>` 会把每个文件的体积打出来，方便确认。只对最新版本这么做——repair 记录的是同步目录**当前**的内容。
 
 ### 2. 客户端玩家操作
 
