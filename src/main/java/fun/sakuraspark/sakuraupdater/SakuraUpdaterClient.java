@@ -55,6 +55,15 @@ public class SakuraUpdaterClient {
     // 无文件变化时本地版本会提前更新，日志请求和重试仍需使用本次检查开始时的版本。
     private String changelogFromVersion;
 
+    public enum UpdateCheckResult {
+        ERROR,
+        CHECKING,
+        NEED_UPDATE,
+        NO_UPDATE,
+        ONLY_SERVER_UPDATE,
+        SERVER_IS_IN_FACTORY,
+    }
+
     // ---- 更新进度：后台线程记账，渲染线程每帧读一份不可变快照 ----
     /** 更新进行到哪一步：界面用它决定进度条的口径和提示文案 */
     public enum UpdatePhase {
@@ -130,7 +139,7 @@ public class SakuraUpdaterClient {
     private boolean debug = false; // 是否开启调试模式 
 
     // ---- 启动预取：配置加载完就在后台把检查跑完，界面弹出时直接拿结果，不占玩家的等待时间 ----
-    private CompletableFuture<Integer> update_check = null; // 当前这次检查（1/2/3/-1，含义同 UpdateCheckScreen.updateStatus）
+    private CompletableFuture<UpdateCheckResult> update_check = null; // 当前这次检查（1/2/3/-1，含义同 UpdateCheckScreen.updateStatus）
     private boolean prefetch_started = false; // 预取整个进程只发起一次：配置 reload 不会再来一轮
     private volatile boolean update_check_stale = false; // 玩家进过世界/刚更新完，旧结果不能再拿去显示
 
@@ -203,7 +212,7 @@ public class SakuraUpdaterClient {
     }
 
     /** 取检查结果：有可用的预取就复用，没有（或已经过期）就立刻起一次新的。 */
-    public synchronized CompletableFuture<Integer> getUpdateCheck() {
+    public synchronized CompletableFuture<UpdateCheckResult> getUpdateCheck() {
         if (update_check == null || update_check_stale) {
             startUpdateCheck();
         }
@@ -211,7 +220,7 @@ public class SakuraUpdaterClient {
     }
 
     /** 强制重新检查：玩家手动点“检查更新”或“重试”时用，不让旧结果顶替。 */
-    public synchronized CompletableFuture<Integer> restartUpdateCheck() {
+    public synchronized CompletableFuture<UpdateCheckResult> restartUpdateCheck() {
         startUpdateCheck();
         return update_check;
     }
@@ -226,7 +235,7 @@ public class SakuraUpdaterClient {
      * 否则两份检查会同时写最新版本号和待删/待下清单这批字段，界面可能显示这一份的版本却用另一份的清单。
      */
     private synchronized void startUpdateCheck() {
-        CompletableFuture<Integer> previous = update_check;
+        CompletableFuture<UpdateCheckResult> previous = update_check;
         if (previous != null && !previous.isDone()) {
             update_check = previous.handle((result, error) -> null).thenCompose(ignored -> runUpdateCheck());
         } else {
@@ -236,18 +245,25 @@ public class SakuraUpdaterClient {
     }
 
     /** 后台线程里的检查体：查版本 → 算本地文件校验 → 更新日志也一并取回来。 */
-    private CompletableFuture<Integer> runUpdateCheck() {
+    private CompletableFuture<UpdateCheckResult> runUpdateCheck() {
         return CompletableFuture.supplyAsync(() -> {
             long started = System.currentTimeMillis();
-            int result;
+            UpdateCheckResult result;
             try {
-                int check = updateCheck();
-                if (check == -1) {
-                    result = -1;
-                } else if (check == 0) {
-                    result = 2;
+                if (file_client.heartbeat().heartbeatStatus.isEmpty()) {
+                    LOGGER.warn("Not connected to the server, cannot check for updates.");
+                    return UpdateCheckResult.ERROR;
+                } else if (file_client.heartbeat().heartbeatStatus.equals("factory")) {
+                    LOGGER.warn("Server is in factory mode, please retry after the server is ready.");
+                    return UpdateCheckResult.SERVER_IS_IN_FACTORY;
+                }
+                UpdateCheckResult check = updateCheck();
+                if (check == UpdateCheckResult.ERROR) {
+                    result = UpdateCheckResult.ERROR;
+                } else if (check == UpdateCheckResult.NO_UPDATE) {
+                    result = UpdateCheckResult.NO_UPDATE;
                 } else {
-                    result = integrityCheck() ? 1 : 3;
+                    result = integrityCheck() ? UpdateCheckResult.NEED_UPDATE : UpdateCheckResult.ONLY_SERVER_UPDATE;
                     // 更新日志本来会在界面 init() 里于渲染线程同步请求一次，这里先在后台取好；
                     // 取日志失败不影响这次检查的结论（界面会照旧自己重试一次）
                     try {
@@ -258,7 +274,7 @@ public class SakuraUpdaterClient {
                 }
             } catch (Exception e) {
                 LOGGER.error("Error during update check", e);
-                result = -1;
+                result = UpdateCheckResult.ERROR;
             }
             LOGGER.info("SakuraUpdater: update check finished in {} ms, result {}.",
                     System.currentTimeMillis() - started, result);
@@ -266,19 +282,19 @@ public class SakuraUpdaterClient {
         }, Util.backgroundExecutor());
     }
 
-    public int updateCheck() {
+    public UpdateCheckResult updateCheck() {
         changelogFromVersion = ClientConfig.getNowVersion();
         last_update_data = null; // 重置上次更新数据，强制重新获取
         changelog = null; // 重置更新日志，强制重新获取
         if (getLastUpdateData() == null) {
-            return -1;
+            return UpdateCheckResult.ERROR;
         }
         if (last_update_data.version.equals(ClientConfig.getNowVersion())) {
             LOGGER.info("Client is up to date.");
-            return 0;
+            return UpdateCheckResult.NO_UPDATE;
         }
         LOGGER.warn("Client is outdated. Latest version: {}", last_update_data.version);
-        return 1;
+        return UpdateCheckResult.NEED_UPDATE;
     }
 
     public boolean integrityCheck() {
@@ -589,7 +605,7 @@ public class SakuraUpdaterClient {
 
     public void connectToServer() {
         if (file_client != null) {
-            if (file_client.heartbeat()) {
+            if (!file_client.heartbeat().heartbeatStatus.isEmpty()) {
                 LOGGER.warn("Already connected to the server.");
                 return;
             }
@@ -597,7 +613,7 @@ public class SakuraUpdaterClient {
         }
         file_client = new FileClient(ClientConfig.host, ClientConfig.port);
 
-        if (file_client.heartbeat()) {
+        if (!file_client.heartbeat().heartbeatStatus.isEmpty()) {
             LOGGER.info("Connected to SakuraUpdater Server at {}:{}", ClientConfig.host, ClientConfig.port);
             return;
         }

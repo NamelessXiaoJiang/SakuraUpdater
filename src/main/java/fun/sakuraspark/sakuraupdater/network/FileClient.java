@@ -32,6 +32,12 @@ import fun.sakuraspark.sakuraupdater.config.DataConfig.Data;
 import fun.sakuraspark.sakuraupdater.utils.MD5;
 
 public class FileClient {
+
+    public class HeartbeatResponse {
+        public boolean acceptRanges = false;
+        public String heartbeatStatus = ""; // "ok" or "factory"
+    }
+
     private static final Logger LOGGER = org.slf4j.LoggerFactory.getLogger(FileClient.class);
 
     /** 小于这个大小就不值得分块了 */
@@ -111,8 +117,6 @@ public class FileClient {
     private final String host;
     private final int port;
     private String baseUrl;
-    /** 服务端是否支持 Range 请求（由心跳响应告知，旧版服务端为 false） */
-    private boolean serverSupportsRanges = false;
 
     public FileClient(String host, int port) {
         this.host = host;
@@ -123,7 +127,8 @@ public class FileClient {
     /**
      * 心跳检测（同时读取服务端能力）
      */
-    public boolean heartbeat() {
+    public HeartbeatResponse heartbeat() {
+        HeartbeatResponse response = new HeartbeatResponse();
         HttpURLConnection conn = null;
         try {
             URL url = new URL(baseUrl + "/heartbeat");
@@ -133,15 +138,21 @@ public class FileClient {
             conn.setReadTimeout(3000);
             if (conn.getResponseCode() == 200) {
                 try (InputStream is = conn.getInputStream()) {
-                    updateServerCapabilities(readInputStream(is));
+                    JsonObject json = JsonParser.parseString(readInputStream(is)).getAsJsonObject();
+                    if(json.has("status")) {
+                        response.heartbeatStatus = json.get("status").getAsString();
+                    }
+                    if (json.has("acceptRanges")) {
+                        response.acceptRanges = json.get("acceptRanges").getAsBoolean();
+                    }
                 } catch (Exception e) {
                     LOGGER.debug("Cannot read heartbeat body: {}", e.toString());
                 }
-                return true;
+                return response;
             }
-            return true;
+            return response;
         } catch (Exception e) {
-            return false;
+            return response;
         } finally {
             if (conn != null) {
                 conn.disconnect();
@@ -149,34 +160,18 @@ public class FileClient {
         }
     }
 
-    /**
-     * 从心跳响应里读取服务端能力。旧版服务端返回纯文本 "OK"，此时保持"不支持 Range"。
-     */
-    private void updateServerCapabilities(String heartbeatBody) {
-        try {
-            JsonObject json = JsonParser.parseString(heartbeatBody).getAsJsonObject();
-            if (json.has("acceptRanges")) {
-                serverSupportsRanges = json.get("acceptRanges").getAsBoolean();
-                LOGGER.info("Server supports Range requests: {}", serverSupportsRanges);
-            }
-        } catch (Exception e) {
-            serverSupportsRanges = false;
-        }
-    }
-
     /** 服务端是否支持 Range 请求 */
     public boolean serverSupportsRanges() {
-        return serverSupportsRanges;
+        return heartbeat().acceptRanges;
     }
 
-    
     /**
      * 获取可用文件列表
      */
     public Data getUpdateList() {
         return getUpdateList(null);
     }
-    
+
     /**
      * 获取指定版本的更新列表
      */
@@ -190,18 +185,18 @@ public class FileClient {
             conn.setRequestProperty("Content-Type", "application/json;charset=utf-8");
             conn.setDoOutput(true);
             conn.setConnectTimeout(10000);
-            
+
             // 构建请求JSON
             JsonObject requestJson = new JsonObject();
             if (version != null && !version.isEmpty()) {
                 requestJson.addProperty("version", version);
             }
-            
+
             String requestBody = new Gson().toJson(requestJson);
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(requestBody.getBytes(StandardCharsets.UTF_8));
             }
-            
+
             if (conn.getResponseCode() == 200) {
                 String response = readInputStream(conn.getInputStream());
                 Gson gson = new Gson();
@@ -226,7 +221,7 @@ public class FileClient {
             }
         }
     }
-    
+
     /**
      * 获取更新日志：晚于指定版本的所有版本记录（按时间升序）。
      * version 为 null 或空时返回全部记录。
@@ -257,7 +252,8 @@ public class FileClient {
                 String response = readInputStream(conn.getInputStream());
                 Gson gson = new Gson();
                 try {
-                    List<Data> dataList = gson.fromJson(response, new TypeToken<List<Data>>(){}.getType());
+                    List<Data> dataList = gson.fromJson(response, new TypeToken<List<Data>>() {
+                    }.getType());
                     LOGGER.debug("Got changelog for version: {}", version);
                     return dataList;
                 } catch (JsonSyntaxException e) {
@@ -293,15 +289,23 @@ public class FileClient {
      * 下载文件：支持多连接分块，全程写入 .part 临时文件，md5 校验通过后才替换目标文件，
      * 因此下载中断（断网、退出游戏）只会留下 .part，不会破坏已有文件。
      *
-     * @param fileName     服务端上的文件路径（同时作为在服务端白名单里的 key）
-     * @param savePath     本地目标路径
-     * @param expectedMd5  期望的 md5，为 null/空时跳过校验
-     * @param connections  分块并发连接数，1 表示单连接
-     * @param listener     下载进度回调（按字节，可能为负），为 null 时不汇报。
-     *                     只有真正落盘的文件才会留下已计入的字节：中途失败、md5 不匹配都会全部退回。
+     * @param fileName    服务端上的文件路径（同时作为在服务端白名单里的 key）
+     * @param savePath    本地目标路径
+     * @param expectedMd5 期望的 md5，为 null/空时跳过校验
+     * @param connections 分块并发连接数，1 表示单连接
+     * @param listener    下载进度回调（按字节，可能为负），为 null 时不汇报。
+     *                    只有真正落盘的文件才会留下已计入的字节：中途失败、md5 不匹配都会全部退回。
      */
     public boolean downloadFile(String fileName, String savePath, @Nullable String expectedMd5, int connections,
             @Nullable ByteProgressListener listener) {
+        // when heartbeat fails, we cannot download files
+        if (heartbeat().heartbeatStatus.isEmpty()) {
+            LOGGER.warn("Not connected to the server, cannot download file.");
+            return false;
+        } else if (heartbeat().heartbeatStatus.equals("factory")) {
+            LOGGER.warn("Server is in factory mode, please retry after the server is ready.");
+            return false;
+        }
         File target = new File(savePath);
         File parent = target.getParentFile();
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
@@ -313,7 +317,7 @@ public class FileClient {
 
         int maxConnections = Math.max(1, connections);
         boolean ok;
-        if (maxConnections > 1 && serverSupportsRanges) {
+        if (maxConnections > 1 && serverSupportsRanges()) {
             long total = probeContentLength(fileName);
             if (total > CHUNK_MIN_SIZE) {
                 // 分块失败时前面成功的块也已经计过数，这里整体退回后再交给单流重新计一遍
@@ -398,9 +402,6 @@ public class FileClient {
                 return 0; // 空文件
             }
             if (code == 200) {
-                // 200 说明服务端忽略了 Range（旧版本服务端），此时才谈得上"服务端不支持分块"。
-                // 其它状态码（403/404/5xx）只是这个文件有问题，不能因此把分块整个关掉。
-                serverSupportsRanges = false;
                 LOGGER.info("Server ignored the Range request, falling back to a single connection");
             } else {
                 LOGGER.warn("Cannot probe the size of {}: HTTP {}", fileName, code);
@@ -525,7 +526,7 @@ public class FileClient {
             }
             long remaining = end - start + 1;
             try (InputStream is = conn.getInputStream();
-                 RandomAccessFile raf = new RandomAccessFile(partFile, "rw")) {
+                    RandomAccessFile raf = new RandomAccessFile(partFile, "rw")) {
                 raf.seek(start);
                 byte[] buffer = new byte[BUFFER_SIZE];
                 while (remaining > 0) {
@@ -565,7 +566,7 @@ public class FileClient {
                 return false;
             }
             try (InputStream is = conn.getInputStream();
-                 OutputStream os = new BufferedOutputStream(new FileOutputStream(partFile), 64 * 1024)) {
+                    OutputStream os = new BufferedOutputStream(new FileOutputStream(partFile), 64 * 1024)) {
                 byte[] buffer = new byte[BUFFER_SIZE];
                 int bytesRead;
                 while ((bytesRead = is.read(buffer)) != -1) {
@@ -622,7 +623,7 @@ public class FileClient {
             LOGGER.warn("Failed to delete {}", file);
         }
     }
-    
+
     /**
      * 上传文件
      */
@@ -635,7 +636,7 @@ public class FileClient {
             conn.setRequestProperty("Content-Type", "application/json;charset=utf-8");
             conn.setDoOutput(true);
             conn.setConnectTimeout(120000);
-            
+
             // 读取文件内容并进行Base64编码
             File sourceFile = new File(fileSourcePath);
             byte[] fileContent = new byte[(int) sourceFile.length()];
@@ -643,17 +644,17 @@ public class FileClient {
                 fis.read(fileContent);
             }
             String encodedContent = java.util.Base64.getEncoder().encodeToString(fileContent);
-            
+
             // 构建请求JSON
             JsonObject requestJson = new JsonObject();
             requestJson.addProperty("file", fileName);
             requestJson.addProperty("content", encodedContent);
-            
+
             String requestBody = new Gson().toJson(requestJson);
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(requestBody.getBytes(StandardCharsets.UTF_8));
             }
-            
+
             if (conn.getResponseCode() == 200) {
                 String response = readInputStream(conn.getInputStream());
                 LOGGER.debug("File upload success: {}", fileName);
@@ -671,7 +672,7 @@ public class FileClient {
             }
         }
     }
-    
+
     /**
      * 读取输入流
      */

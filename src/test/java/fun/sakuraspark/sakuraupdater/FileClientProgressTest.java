@@ -3,6 +3,7 @@ package fun.sakuraspark.sakuraupdater;
 import com.sun.net.httpserver.HttpServer;
 
 import fun.sakuraspark.sakuraupdater.network.FileClient;
+import fun.sakuraspark.sakuraupdater.network.FileClient.HeartbeatResponse;
 import fun.sakuraspark.sakuraupdater.utils.FileUtils;
 import fun.sakuraspark.sakuraupdater.utils.MD5;
 
@@ -48,7 +49,7 @@ public final class FileClientProgressTest {
         server.start();
         FileClient client = new FileClient("127.0.0.1", server.port());
         try {
-            require(client.heartbeat(), "heartbeat must succeed");
+            require(client.heartbeat().heartbeatStatus.equals("ok"), "heartbeat must succeed");
             require(client.serverSupportsRanges(), "test server advertises Range support");
 
             // 1. 体积探测：正常文件与空文件

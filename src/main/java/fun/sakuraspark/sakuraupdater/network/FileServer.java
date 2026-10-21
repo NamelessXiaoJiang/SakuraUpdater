@@ -42,8 +42,20 @@ public class FileServer {
     // 存储所有可用文件信息
     private final Map<String, File> availableFiles = new HashMap<>();
 
-    public FileServer(int port) {
+    // heartbeat status
+    private String heartbeatStatus = "ok";
+    private boolean acceptRanges = true;
+
+    public FileServer(int port, boolean acceptRanges) {
         this.port = port;
+        this.acceptRanges = acceptRanges;
+    }
+
+    /**
+     * 设置心跳状态
+     */
+    public void setHeartbeatStatus(String status) {
+        this.heartbeatStatus = status;
     }
 
     /**
@@ -115,7 +127,7 @@ public class FileServer {
             if ("POST".equals(exchange.getRequestMethod())) {
                 // acceptRanges 用来告诉新版客户端可以按 Range 分块下载；
                 // 旧版客户端只看 HTTP 状态码，响应体改成 JSON 不影响它
-                String response = "{\"status\":\"ok\",\"acceptRanges\":true}";
+                String response = "{\"status\":\""+heartbeatStatus+"\",\"acceptRanges\":"+(acceptRanges?"true":"false")+"}";
                 byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json;charset=utf-8");
                 exchange.sendResponseHeaders(200, responseBytes.length);

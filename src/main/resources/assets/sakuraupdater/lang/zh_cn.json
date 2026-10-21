@@ -8,6 +8,7 @@
   "gui.sakuraupdater.UpdateCheckScreen.ok": "确定",
   "gui.sakuraupdater.UpdateCheckScreen.cancel": "取消",
   "gui.sakuraupdater.UpdateCheckScreen.retry": "重试",
+  "gui.sakuraupdater.UpdateCheckScreen.ServerInFactoryMode": "服务器处于工厂模式，请稍后重试",
   "gui.sakuraupdater.UpdateScreen": "更新中...",
   "gui.sakuraupdater.UpdateScreen.complete": "更新完成",
   "gui.sakuraupdater.UpdateScreen.failed": "但是%s个文件下载失败",
@@ -30,5 +31,6 @@
   "gui.sakuraupdater.FixScreen.IssuesFound": "发现问题!!!",
   "gui.sakuraupdater.FixScreen.NoIssues": "未发现问题",
   "gui.sakuraupdater.TitleScreen.checkupdate": "检查更新",
-  "gui.sakuraupdater.TitleScreen.fix": "Mods修复"
+  "gui.sakuraupdater.TitleScreen.fix": "Mods修复",
+  "gui.sakuraupdater.Message.FileChangeDetected": "§e[SakuraSpark] 检测到文件变化, 请记得提交更改！"
 }

@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
 import fun.sakuraspark.sakuraupdater.SakuraUpdaterClient;
+import fun.sakuraspark.sakuraupdater.SakuraUpdaterClient.UpdateCheckResult;
 import fun.sakuraspark.sakuraupdater.config.DataConfig.Data;
 import fun.sakuraspark.sakuraupdater.gui.components.MarkdownBox;
 import net.minecraft.Util;
@@ -34,7 +35,7 @@ public class UpdateCheckScreen extends Screen {
     private boolean fading = true;
     private long fadeInStart;
 
-    private int updateStatus = 0; // -1: error, 0: checking, 1: need update, 2: no update 3: only server update
+    private UpdateCheckResult updateStatus = UpdateCheckResult.CHECKING; // -1: error, 0: checking, 1: need update, 2: no update 3: only server update
 
     public static final ResourceLocation BOOK_LOCATION = new ResourceLocation("textures/gui/book.png");
     private static final ResourceLocation BEACON_LOCATION = new ResourceLocation("minecraft", "textures/gui/container/beacon.png");
@@ -48,10 +49,10 @@ public class UpdateCheckScreen extends Screen {
 
     public UpdateCheckScreen() {
         super(Component.translatable("gui.sakuraupdater.UpdateCheckScreen"));
-        CompletableFuture<Integer> check = SakuraUpdaterClient.getInstance().getUpdateCheck();
+        CompletableFuture<UpdateCheckResult> check = SakuraUpdaterClient.getInstance().getUpdateCheck();
         if (check.isDone()) {
             // 游戏加载期间已经查完了：首帧就是最终状态，不闪也不用重建控件
-            updateStatus = check.getNow(-1); // 只有已完成才会走到这里，检查体自己把异常兜成了 -1
+            updateStatus = check.getNow(UpdateCheckResult.ERROR); // 只有已完成才会走到这里，检查体自己把异常兜成了 -1
             LOGGER.info("SakuraUpdater: update check already finished during loading, showing result {} at once.",
                     updateStatus);
             return;
@@ -78,7 +79,7 @@ public class UpdateCheckScreen extends Screen {
     }
 
     protected void createUpdateButtons() {
-        if (updateStatus == 1 || updateStatus == 3) {
+        if (updateStatus == UpdateCheckResult.NEED_UPDATE || updateStatus == UpdateCheckResult.ONLY_SERVER_UPDATE) {
             var client = SakuraUpdaterClient.getInstance();
             var logs = client.getChangeLog();
             // 正文与翻页按钮共用本次重建的列表快照，避免页数和内容不一致。
@@ -91,7 +92,7 @@ public class UpdateCheckScreen extends Screen {
             // 重试或数据变化后，原页码可能已超出新的页数范围。
             currentPage = Math.max(0, Math.min(currentPage, changelogPages.size() - 1));
         }
-        if (updateStatus == -1) {
+        if (updateStatus == UpdateCheckResult.ERROR || updateStatus == UpdateCheckResult.SERVER_IS_IN_FACTORY) {
             this.addRenderableWidget(
                     Button.builder(Component.translatable("gui.sakuraupdater.UpdateCheckScreen.retry"), button -> {
                         // 点击按钮后重新检查更新（手动重试不能复用启动时的预取结果）
@@ -103,7 +104,7 @@ public class UpdateCheckScreen extends Screen {
                         // 点击按钮后关闭当前界面
                         Minecraft.getInstance().setScreen(new TitleScreen(true));
                     }).bounds(this.width / 2 - 80, 185 + 22, 160, 20).build());
-        } else if (updateStatus == 1) {
+        } else if (updateStatus == UpdateCheckResult.NEED_UPDATE) {
             this.addRenderableWidget(
                     Button.builder(Component.translatable("gui.sakuraupdater.UpdateCheckScreen.update"), button -> {
                         // 点击按钮后打开更新界面
@@ -122,7 +123,7 @@ public class UpdateCheckScreen extends Screen {
                         Minecraft.getInstance().setScreen(new TitleScreen(true));
                     }).bounds(this.width / 2 - 80, 185, 160, 20).build());
         }
-        if ((updateStatus == 1 || updateStatus == 3) && !changelogPages.isEmpty()) {
+        if ((updateStatus == UpdateCheckResult.NEED_UPDATE || updateStatus == UpdateCheckResult.ONLY_SERVER_UPDATE) && !changelogPages.isEmpty()) {
             createBookButtons();
             var page = changelogPages.get(currentPage);
             var markdownbox = new MarkdownBox(this.width / 2 - 62, 25, 120, 140,
@@ -170,7 +171,7 @@ public class UpdateCheckScreen extends Screen {
         guiGraphics.fill(0, 0, this.width, this.height, 0x20000000);
         
         // 渲染书本
-        if (updateStatus == 1 || updateStatus == 3) { // 需要更新时显示背景书籍图片
+        if (updateStatus == UpdateCheckResult.NEED_UPDATE || updateStatus == UpdateCheckResult.ONLY_SERVER_UPDATE) { // 需要更新时显示背景书籍图片
             guiGraphics.blit(BOOK_LOCATION, (this.width - 186) / 2, 2, 0, 0, 192, 192);
         }
 
@@ -180,36 +181,45 @@ public class UpdateCheckScreen extends Screen {
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(this.width / 2 - (16 * scale) / 2, this.height / 4 - (16 * scale) / 2, 0);
         guiGraphics.pose().scale(scale, scale, 0f);
-        if (updateStatus == 2) {// 不需要更新时显示附魔书加绿色对勾
+        if (updateStatus == UpdateCheckResult.NO_UPDATE) {// 不需要更新时显示附魔书加绿色对勾
             ItemStack stack = new ItemStack(Items.BOOK);
             guiGraphics.renderItem(stack, 0, 0);
-        } else if (updateStatus == -1) {// 出错时显示土豆服务器加ping unknown
+        } else if (updateStatus == UpdateCheckResult.ERROR) {// 出错时显示土豆服务器加ping unknown
             ItemStack stack = new ItemStack(Items.POISONOUS_POTATO);
             guiGraphics.renderItem(stack, 0, 0);
+        } else if (updateStatus == UpdateCheckResult.SERVER_IS_IN_FACTORY) { // in factory mode, show crafting table and diamond pickaxe
+            ItemStack stack = new ItemStack(Items.CRAFTING_TABLE);
+            guiGraphics.renderItem(stack, 0, 0);
+            stack = new ItemStack(Items.DIAMOND_PICKAXE);
+            guiGraphics.renderItem(stack, 0, 0);
+            
         }
         guiGraphics.pose().popPose();
 
-        if (updateStatus == 2) {
+        if (updateStatus == UpdateCheckResult.NO_UPDATE) {
             guiGraphics.blit(BEACON_LOCATION, this.width / 2 + 5, this.height / 4 + 5, 90, 220, 18, 18, 256, 256); // 绿色对勾
-        } else if (updateStatus == -1) {
+        } else if (updateStatus == UpdateCheckResult.ERROR) {
             guiGraphics.blit(ICONS_LOCATION, this.width / 2 + 10, this.height / 4 + 10, 0, 216, 10, 8, 256, 256); // ping unknown
         }
 
-        if (updateStatus == 0) {
+        if (updateStatus == UpdateCheckResult.CHECKING) {
             guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, this.height / 2, 16777215);
-        } else if (updateStatus == 1 || updateStatus == 3) {
+        } else if (updateStatus == UpdateCheckResult.NEED_UPDATE || updateStatus == UpdateCheckResult.ONLY_SERVER_UPDATE) {
             guiGraphics.drawCenteredString(this.font,
                     Component.literal(SakuraUpdaterClient.getInstance().getLastUpdateData().version), this.width / 2,
                     16, 16711680); // Red color for need update
-        } else if (updateStatus == 2) {
+        } else if (updateStatus == UpdateCheckResult.NO_UPDATE) {
             guiGraphics.drawCenteredString(this.font,
                     Component.translatable("gui.sakuraupdater.UpdateCheckScreen.NoUpdate"), this.width / 2,
                     this.height / 2, 65280); // Green color for no update
-        } else if (updateStatus == -1) {
+        } else if (updateStatus == UpdateCheckResult.ERROR) {
             guiGraphics.drawCenteredString(this.font,
                     Component.translatable("gui.sakuraupdater.UpdateCheckScreen.Error"), this.width / 2,
                     this.height / 2, 16711680); // Red color for error
-
+        } else if (updateStatus == UpdateCheckResult.SERVER_IS_IN_FACTORY) {
+            guiGraphics.drawCenteredString(this.font,
+                    Component.translatable("gui.sakuraupdater.UpdateCheckScreen.ServerInFactoryMode"), this.width / 2,
+                    this.height / 2, 16711680); // Red color for error
         }
     }
 

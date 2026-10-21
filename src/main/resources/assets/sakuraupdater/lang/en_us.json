@@ -8,6 +8,7 @@
   "gui.sakuraupdater.UpdateCheckScreen.ok": "OK",
   "gui.sakuraupdater.UpdateCheckScreen.cancel": "Cancel",
   "gui.sakuraupdater.UpdateCheckScreen.retry": "Retry",
+  "gui.sakuraupdater.UpdateCheckScreen.ServerInFactoryMode": "Server is in factory mode, please try again later",
   "gui.sakuraupdater.UpdateScreen": "Updating...",
   "gui.sakuraupdater.UpdateScreen.complete": "Complete",
   "gui.sakuraupdater.UpdateScreen.failed": "but %s files could not be downloaded",
@@ -30,5 +31,6 @@
   "gui.sakuraupdater.FixScreen.IssuesFound": "Issues found",
   "gui.sakuraupdater.FixScreen.NoIssues": "No issues found",
   "gui.sakuraupdater.TitleScreen.checkupdate": "Update",
-  "gui.sakuraupdater.TitleScreen.fix": "Fix Mods"
+  "gui.sakuraupdater.TitleScreen.fix": "Fix Mods",
+  "gui.sakuraupdater.Message.FileChangeDetected": "§e[SakuraSpark] File change detected, don't forget to commit the changes!"
 }

@@ -1,10 +1,13 @@
 package fun.sakuraspark.sakuraupdater;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -14,8 +17,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import fun.sakuraspark.sakuraupdater.config.DataConfig;
+import fun.sakuraspark.sakuraupdater.config.DataConfig.Data;
+import fun.sakuraspark.sakuraupdater.config.DataConfig.PathData;
+import fun.sakuraspark.sakuraupdater.config.IGetSyncDirs;
 import fun.sakuraspark.sakuraupdater.config.StandaloneServerConfig;
 import fun.sakuraspark.sakuraupdater.network.FileServer;
+import fun.sakuraspark.sakuraupdater.utils.FileWatchdog;
 import fun.sakuraspark.sakuraupdater.utils.ServerCommandsHelper;
 
 /**
@@ -162,22 +169,79 @@ public class SakuraUpdaterServerStandalone {
                 """);
         LOGGER.info("SakuraUpdater Standalone Server is starting...");
 
-        // 1. 加载 YAML 配置
+        // 加载 YAML 配置
         StandaloneServerConfig.initialize();
 
-        // 2. 连接数据库
+        // 连接数据库
         if (!DataConfig.connectToDatabase("sakuraupdater-database.db")) {
             LOGGER.error("Failed to connect to SakuraUpdater database!");
             return 1;
         }
 
-        // 3. 启动文件服务器
+        // 启动文件服务器
         int port = StandaloneServerConfig.getPort();
         LOGGER.info("Starting file server on port {}...", port);
-        FileServer fileServer = new FileServer(port);
+        FileServer fileServer = new FileServer(port, true);
         fileServer.start();
 
-        // 4. 设置命令分发器
+        // set watchdog
+        FileWatchdog watchdog = new FileWatchdog();
+        watchdog.setFileChangeHandler(() -> {
+            fileServer.setHeartbeatStatus("factory"); // set heartbeat status to factory when file change detected
+            Thread watchdogThread = new Thread(() -> {
+                while (watchdog.isFileChanged()) {
+                    LOGGER.warn("file change detected, don't forget to commit the changes!");
+                    try {
+                        Thread.sleep(30000); // 每30秒检查一次
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            });
+            watchdogThread.setDaemon(true);
+            watchdogThread.start();
+        });
+
+        // add sync directories to watchdog
+        for (String syncDir : IGetSyncDirs.getSyncDirs()) {
+            List<String> parts = List.of(syncDir.split(":"));
+            if (parts.size() < 2) {
+                continue;
+            }
+            String targetPath = parts.get(0).trim();
+            String model = parts.get(1).trim();
+            if (!model.equals("mirror") && !model.equals("push")) {
+                continue;
+            }
+            List<String> sourcePath = parts.size() > 2 ? parts.subList(2, parts.size()) : List.of(targetPath);
+            for (String source : sourcePath) {
+                watchdog.registerPath(new File(source).toPath());
+            }
+        }
+        
+        // first time check
+        List<String> lastMD5List = new ArrayList<>();
+        List<String> currentMD5List = new ArrayList<>();
+        for (PathData data : DataConfig.getLastData().paths) {
+            if (!data.model.equals("mirror") && !data.model.equals("push")) {
+                continue;
+            }
+            data.files.forEach(file -> lastMD5List.add(file.md5));
+        }
+        for (PathData data : ServerCommandsHelper.getPathDataList()) {
+            if (!data.model.equals("mirror") && !data.model.equals("push")) {
+                continue;
+            }
+            data.files.forEach(file -> currentMD5List.add(file.md5));
+        }
+        Collections.sort(lastMD5List);
+        Collections.sort(currentMD5List);
+        if (!lastMD5List.equals(currentMD5List)) {
+            watchdog.fileChanged();
+        }        
+
+        // 设置命令分发器
         CommandDispatcher rootDispatcher = new CommandDispatcher(null)
                 .then(new CommandDispatcher("data")
                         .then(new CommandDispatcher("list").execute(cmd -> {
@@ -272,12 +336,14 @@ public class SakuraUpdaterServerStandalone {
                             description);
                     if (result.success) {
                         LOGGER.info(result.message);
+                        watchdog.handled(); // reset the file change flag after commit
+                        fileServer.setHeartbeatStatus("ok"); // set heartbeat status to "ok" from "
                     } else {
                         LOGGER.warn(result.message);
                     }
                 }));
 
-        // 5. 监听控制台输入，分发命令
+        // 监听控制台输入，分发命令
         try (Scanner scanner = new Scanner(System.in)) {
             while (true) {
                 //promptManager.showPrompt(System.out);
