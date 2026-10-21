@@ -283,6 +283,13 @@ public class SakuraUpdaterClient {
     }
 
     public UpdateCheckResult updateCheck() {
+        if (file_client.heartbeat().heartbeatStatus.isEmpty()) {
+            LOGGER.warn("Not connected to the server, cannot check for updates.");
+            return UpdateCheckResult.ERROR;
+        } else if (file_client.heartbeat().heartbeatStatus.equals("factory")) {
+            LOGGER.warn("Server is in factory mode, please retry after the server is ready.");
+            return UpdateCheckResult.SERVER_IS_IN_FACTORY;
+        }
         changelogFromVersion = ClientConfig.getNowVersion();
         last_update_data = null; // 重置上次更新数据，强制重新获取
         changelog = null; // 重置更新日志，强制重新获取

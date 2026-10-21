@@ -45,8 +45,8 @@ public class FixScreen extends Screen {
             try {
                 // 强制进行完整性检查
                 UpdateCheckResult result = SakuraUpdaterClient.getInstance().updateCheck();
-                if (result == UpdateCheckResult.ERROR) {
-                    return UpdateCheckResult.ERROR;
+                if (result == UpdateCheckResult.ERROR || result == UpdateCheckResult.SERVER_IS_IN_FACTORY) {
+                    return result; // Return error or factory mode status
                 }
                 if (SakuraUpdaterClient.getInstance().integrityCheck()) {
                     return UpdateCheckResult.NEED_UPDATE; // Need update
@@ -154,7 +154,7 @@ public class FixScreen extends Screen {
                     this.height / 2, 16711680); // Red color for error
         } else if (fixStatus == UpdateCheckResult.SERVER_IS_IN_FACTORY) {
             guiGraphics.drawCenteredString(this.font,
-                    Component.translatable("gui.sakuraupdater.FixScreen.ServerInFactoryMode"), this.width / 2,
+                    Component.translatable("gui.sakuraupdater.UpdateCheckScreen.ServerInFactoryMode"), this.width / 2,
                     this.height / 2, 16711680); // Red color for error
         }
     }
