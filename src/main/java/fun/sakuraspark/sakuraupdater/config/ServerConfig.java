@@ -9,18 +9,18 @@ import com.mojang.logging.LogUtils;
 
 import fun.sakuraspark.sakuraupdater.SakuraUpdater;
 import fun.sakuraspark.sakuraupdater.SakuraUpdaterServer;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.common.ForgeConfigSpec;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.event.config.ModConfigEvent;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.neoforge.common.ModConfigSpec;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.fml.event.config.ModConfigEvent;
 
 // An example config class. This is not required, but it's a good idea to have one to keep your config organized.
 // Demonstrates how to use Forge's config APIs
-@Mod.EventBusSubscriber(value = Dist.DEDICATED_SERVER, modid = SakuraUpdater.MODID, bus = Mod.EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(value = Dist.DEDICATED_SERVER, modid = SakuraUpdater.MODID, bus = EventBusSubscriber.Bus.MOD)
 public class ServerConfig {
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
+    private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     // private static final ForgeConfigSpec.ConfigValue<String> UPDATE_TIME = BUILDER
     //         .comment(
@@ -29,10 +29,10 @@ public class ServerConfig {
 
     
     // post
-    private static final ForgeConfigSpec.IntValue PORT = BUILDER
+    private static final ModConfigSpec.IntValue PORT = BUILDER
             .comment("----IMPORTANT!!! Needs to restart!!!----\nThe port of the file server, default is 25564.").defineInRange("port", 25564, 1, 65535);
 
-    private static final ForgeConfigSpec.IntValue MAX_THREADS = BUILDER
+    private static final ModConfigSpec.IntValue MAX_THREADS = BUILDER
             .comment("----IMPORTANT!!! Needs to restart!!!----\n"
                     + "Max concurrent handler threads of the built-in file server.\n"
                     + "Every in-flight file download occupies one thread, so keep it >= "
@@ -41,7 +41,7 @@ public class ServerConfig {
             .defineInRange("max_threads", 32, 4, 256);
 
     // a list of strings that are treated as sync directories
-    private static final ForgeConfigSpec.ConfigValue<List<? extends String>> SYNC_DIR = BUILDER
+    private static final ModConfigSpec.ConfigValue<List<? extends String>> SYNC_DIR = BUILDER
             .comment(
                     "A list of sync directories, each entry should be in the format 'targetpath:mode[:sourcepath:sourcepath2:...]', e.g. 'mod:mirror' or 'config:push:clientconfig'.\n"
                             + "The 'targetpath' is the client target path of sync, and 'sourcepath' is the server source path of sync.\n"
@@ -55,10 +55,10 @@ public class ServerConfig {
                             + "    'config:push:clientconfig',\n"
                             + "    'mods:ignore:.*abc\\.jar$'\n"
                             + "]")
-            .defineListAllowEmpty("SYNC_DIR", List.of(), ServerConfig::validateKeyMap);
-    // static final ForgeConfigSpec for the server config
+            .defineListAllowEmpty("SYNC_DIR", List.of(), () -> "", ServerConfig::validateKeyMap);
+    // static final ModConfigSpec for the server config
 
-    public static final ForgeConfigSpec SPEC = BUILDER.build();
+    public static final ModConfigSpec SPEC = BUILDER.build();
 
     public static String update_time;
 

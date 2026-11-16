@@ -14,24 +14,17 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
-import net.minecraft.client.renderer.CubeMap;
-import net.minecraft.client.renderer.PanoramaRenderer;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 public class FixScreen extends Screen {
     
-    public static final CubeMap CUBE_MAP = new CubeMap(new ResourceLocation("textures/gui/title/background/panorama"));
-
-    private final PanoramaRenderer panorama = new PanoramaRenderer(CUBE_MAP);
-    private boolean fading = true;
-    private long fadeInStart;
-    
-    private static final ResourceLocation BEACON_LOCATION = new ResourceLocation("minecraft", "textures/gui/container/beacon.png");
-    private static final ResourceLocation ICONS_LOCATION = new ResourceLocation("minecraft", "textures/gui/icons.png");
+    public static final ResourceLocation CONFIRM_LOCATION = ResourceLocation.withDefaultNamespace("textures/gui/sprites/container/beacon/confirm.png");
+    public static final ResourceLocation CANCEL_LOCATION = ResourceLocation.withDefaultNamespace("textures/gui/sprites/container/beacon/cancel.png");
+    public static final ResourceLocation PING_UNKNOWN_LOCATION = ResourceLocation.withDefaultNamespace("textures/gui/sprites/icon/ping_unknown.png");
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
@@ -46,7 +39,7 @@ public class FixScreen extends Screen {
                 // 强制进行完整性检查
                 UpdateCheckResult result = SakuraUpdaterClient.getInstance().updateCheck();
                 if (result == UpdateCheckResult.ERROR || result == UpdateCheckResult.SERVER_IS_IN_FACTORY) {
-                    return result; // Return error or factory mode status
+                    return result;
                 }
                 if (SakuraUpdaterClient.getInstance().integrityCheck()) {
                     return UpdateCheckResult.NEED_UPDATE; // Need update
@@ -103,21 +96,22 @@ public class FixScreen extends Screen {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // 渲染背景
-        if (this.fadeInStart == 0L && this.fading) {
-            this.fadeInStart = Util.getMillis();
-        }
-        float f = this.fading ? (float) (Util.getMillis() - this.fadeInStart) / 1000.0F : 1.0F;
-        this.panorama.render(partialTick, Mth.clamp(f, 0.0F, 1.0F));
-        guiGraphics.fill(0, 0, this.width, this.height, 0x20000000);
+        // // 渲染背景
+        // if (this.fadeInStart == 0L && this.fading) {
+        //     this.fadeInStart = Util.getMillis();
+        // }
+        // float f = this.fading ? (float) (Util.getMillis() - this.fadeInStart) / 1000.0F : 1.0F;
+        // this.panorama.render(partialTick, Mth.clamp(f, 0.0F, 1.0F));
+        // guiGraphics.fill(0, 0, this.width, this.height, 0x20000000);
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
         float scale = 3.0f; // 缩放因子
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(this.width / 2 - (16 * scale) / 2, this.height / 4 - (16 * scale) / 2, 0);
         guiGraphics.pose().scale(scale, scale, 0f);
-        if (fixStatus == UpdateCheckResult.NEED_UPDATE || fixStatus == UpdateCheckResult.NO_UPDATE) { // 显示书
-            ItemStack stack = new ItemStack(Items.BOOK);
+        if (fixStatus == UpdateCheckResult.NEED_UPDATE || fixStatus == UpdateCheckResult.NO_UPDATE) { // 显示附魔书
+            ItemStack stack = new ItemStack(Items.ENCHANTED_BOOK);
+            stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, false);
             guiGraphics.renderItem(stack, 0, 0);
         } else if (fixStatus == UpdateCheckResult.SERVER_IS_IN_FACTORY) { // 服务器处于工厂模式时显示工作台和钻石镐
             ItemStack stack = new ItemStack(Items.CRAFTING_TABLE);
@@ -131,11 +125,11 @@ public class FixScreen extends Screen {
         guiGraphics.pose().popPose();
 
         if (fixStatus == UpdateCheckResult.NEED_UPDATE) {
-            guiGraphics.blit(BEACON_LOCATION, this.width / 2 + 5, this.height / 4 + 5, 112, 220, 18, 18, 256, 256); // 红色叉号
+            guiGraphics.blit(CANCEL_LOCATION, this.width / 2+5, this.height / 4+5, 0, 0, 18, 18, 18, 18); // 绘制红色叉号
         } else if (fixStatus == UpdateCheckResult.NO_UPDATE) {
-            guiGraphics.blit(BEACON_LOCATION, this.width / 2 + 5, this.height / 4 + 5, 90, 220, 18, 18, 256, 256); // 绿色对勾
+            guiGraphics.blit(CONFIRM_LOCATION, this.width / 2+5, this.height / 4+5, 0, 0, 18, 18, 18, 18); // 绘制绿色对勾
         } else if (fixStatus == UpdateCheckResult.ERROR) {
-            guiGraphics.blit(ICONS_LOCATION, this.width / 2 + 10, this.height / 4 + 10, 0, 216, 10, 8, 256, 256); // ping unknown
+            guiGraphics.blit(PING_UNKNOWN_LOCATION, this.width / 2+10, this.height / 4+10, 0, 0, 10, 8, 10, 8); // 绘制ping unknown图标
         }
 
         if (fixStatus == UpdateCheckResult.CHECKING) {

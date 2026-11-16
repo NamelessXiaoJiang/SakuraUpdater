@@ -23,13 +23,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.commands.CommandSourceStack;
-import net.minecraftforge.client.event.ScreenEvent;
-import net.minecraftforge.event.RegisterCommandsEvent;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.eventbus.api.EventPriority;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.ModLoadingContext;
-import net.minecraftforge.fml.config.ModConfig;
+import net.neoforged.bus.api.EventPriority;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.ModLoadingContext;
+import net.neoforged.fml.config.ModConfig;
 
 import static fun.sakuraspark.sakuraupdater.utils.CommandUtils.sendSuccessMessage;
 import static net.minecraft.commands.Commands.*;
@@ -146,7 +146,7 @@ public class SakuraUpdaterClient {
     private volatile boolean update_check_stale = false; // 玩家进过世界/刚更新完，旧结果不能再拿去显示
 
     SakuraUpdaterClient() {
-        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
+        ModLoadingContext.get().getActiveContainer().registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
         INSTANCE = this;
         LOGGER.info("SakuraUpdater Client is running!");
     }
@@ -651,7 +651,7 @@ public class SakuraUpdaterClient {
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
-    public void onScreenOpenning(ScreenEvent.Opening event) {
+    public void onScreenOpening(ScreenEvent.Opening event) {
         // 主菜单打开时抢先把更新界面塞进去；用 LOWEST 保证在同样改屏幕的监听器里最后写入
         if (show_state != ShowState.WAITING || show_retry_delay > 0 || show_attempts >= MAX_SHOW_ATTEMPTS)
             return;
@@ -664,10 +664,7 @@ public class SakuraUpdaterClient {
     // 兜底重试：其它 mod（例如 Distant Horizons 的更新界面）可能在之后用 setScreen 直接顶掉我们的界面，
     // 光靠 ScreenEvent.Opening 只有一次机会，被顶掉就再也弹不出来了
     @SubscribeEvent
-    public void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
-            return;
-        }
+    public void onClientTick(ClientTickEvent.Post event) {
         if (show_retry_delay > 0) {
             show_retry_delay--;
         }

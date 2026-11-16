@@ -33,8 +33,8 @@ public class TitleScreenMixin extends net.minecraft.client.gui.screens.Screen {
     // 在菜单添加一个按钮，点击后打开更新界面
     @Inject(method = "init", at = @At("TAIL"))
     private void sakuraUpdater$addUpdateButton(CallbackInfo ci) {
-        ResourceLocation logoTexture = new ResourceLocation("sakuraupdater", "textures/sakuraupdater.png");
-        this.logoWidget = new ImageWidget(20, 20, logoTexture);
+        ResourceLocation logoTexture = ResourceLocation.fromNamespaceAndPath("sakuraupdater", "textures/sakuraupdater.png");
+        this.logoWidget = ImageWidget.texture(20, 20, logoTexture, 20, 20);
         this.logoWidget.setY(5);
         this.logoWidget.setX(0);
         this.addRenderableWidget(this.logoWidget);

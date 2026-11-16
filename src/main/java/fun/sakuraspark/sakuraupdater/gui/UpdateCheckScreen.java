@@ -12,34 +12,32 @@ import fun.sakuraspark.sakuraupdater.SakuraUpdaterClient;
 import fun.sakuraspark.sakuraupdater.SakuraUpdaterClient.UpdateCheckResult;
 import fun.sakuraspark.sakuraupdater.config.DataConfig.Data;
 import fun.sakuraspark.sakuraupdater.gui.components.MarkdownBox;
-import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.gui.screens.inventory.PageButton;
-import net.minecraft.client.renderer.CubeMap;
-import net.minecraft.client.renderer.PanoramaRenderer;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 public class UpdateCheckScreen extends Screen {
 
-    public static final CubeMap CUBE_MAP = new CubeMap(new ResourceLocation("textures/gui/title/background/panorama"));
+    // public static final CubeMap CUBE_MAP = new CubeMap(new
+    // ResourceLocation("textures/gui/title/background/panorama"));
 
-    private final PanoramaRenderer panorama = new PanoramaRenderer(CUBE_MAP);
-    private boolean fading = true;
-    private long fadeInStart;
+    // private final PanoramaRenderer panorama = new PanoramaRenderer(CUBE_MAP);
+    // private boolean fading = true;
+    // private long fadeInStart;
 
     private UpdateCheckResult updateStatus = UpdateCheckResult.CHECKING; // -1: error, 0: checking, 1: need update, 2: no update 3: only server update
 
-    public static final ResourceLocation BOOK_LOCATION = new ResourceLocation("textures/gui/book.png");
-    private static final ResourceLocation BEACON_LOCATION = new ResourceLocation("minecraft", "textures/gui/container/beacon.png");
-    private static final ResourceLocation ICONS_LOCATION = new ResourceLocation("minecraft", "textures/gui/icons.png");
+    public static final ResourceLocation BOOK_LOCATION = ResourceLocation.withDefaultNamespace("textures/gui/book.png");
+    public static final ResourceLocation CONFIRM_LOCATION = ResourceLocation.withDefaultNamespace("textures/gui/sprites/container/beacon/confirm.png");
+    public static final ResourceLocation PING_UNKNOWN_LOCATION = ResourceLocation.withDefaultNamespace("textures/gui/sprites/icon/ping_unknown.png");
     private PageButton forwardButton;
     private PageButton backButton;
     private int currentPage = 0;
@@ -162,19 +160,6 @@ public class UpdateCheckScreen extends Screen {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // 渲染背景
-        if (this.fadeInStart == 0L && this.fading) {
-            this.fadeInStart = Util.getMillis();
-        }
-        float f = this.fading ? (float) (Util.getMillis() - this.fadeInStart) / 1000.0F : 1.0F;
-        this.panorama.render(partialTick, Mth.clamp(f, 0.0F, 1.0F));
-        guiGraphics.fill(0, 0, this.width, this.height, 0x20000000);
-        
-        // 渲染书本
-        if (updateStatus == UpdateCheckResult.NEED_UPDATE || updateStatus == UpdateCheckResult.ONLY_SERVER_UPDATE) { // 需要更新时显示背景书籍图片
-            guiGraphics.blit(BOOK_LOCATION, (this.width - 186) / 2, 2, 0, 0, 192, 192);
-        }
-
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
         float scale = 3.0f; // 缩放因子
@@ -182,7 +167,8 @@ public class UpdateCheckScreen extends Screen {
         guiGraphics.pose().translate(this.width / 2 - (16 * scale) / 2, this.height / 4 - (16 * scale) / 2, 0);
         guiGraphics.pose().scale(scale, scale, 0f);
         if (updateStatus == UpdateCheckResult.NO_UPDATE) {// 不需要更新时显示附魔书加绿色对勾
-            ItemStack stack = new ItemStack(Items.BOOK);
+            ItemStack stack = new ItemStack(Items.ENCHANTED_BOOK);
+            stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, false);
             guiGraphics.renderItem(stack, 0, 0);
         } else if (updateStatus == UpdateCheckResult.ERROR) {// 出错时显示土豆服务器加ping unknown
             ItemStack stack = new ItemStack(Items.POISONOUS_POTATO);
@@ -197,9 +183,9 @@ public class UpdateCheckScreen extends Screen {
         guiGraphics.pose().popPose();
 
         if (updateStatus == UpdateCheckResult.NO_UPDATE) {
-            guiGraphics.blit(BEACON_LOCATION, this.width / 2 + 5, this.height / 4 + 5, 90, 220, 18, 18, 256, 256); // 绿色对勾
+            guiGraphics.blit(CONFIRM_LOCATION, this.width / 2+5, this.height / 4+5, 0, 0, 18, 18, 18, 18); // 绘制绿色对勾
         } else if (updateStatus == UpdateCheckResult.ERROR) {
-            guiGraphics.blit(ICONS_LOCATION, this.width / 2 + 10, this.height / 4 + 10, 0, 216, 10, 8, 256, 256); // ping unknown
+            guiGraphics.blit(PING_UNKNOWN_LOCATION, this.width / 2+10, this.height / 4+10, 0, 0, 10, 8, 10, 8); // 绘制ping unknown图标
         }
 
         if (updateStatus == UpdateCheckResult.CHECKING) {
@@ -223,4 +209,12 @@ public class UpdateCheckScreen extends Screen {
         }
     }
 
+    @Override
+    public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        super.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+
+        if (updateStatus == UpdateCheckResult.NEED_UPDATE || updateStatus == UpdateCheckResult.ONLY_SERVER_UPDATE) { // 需要更新时显示背景书籍图片
+            guiGraphics.blit(BOOK_LOCATION, (this.width - 186) / 2, 2, 0, 0, 192, 192);
+        }
+    }
 }

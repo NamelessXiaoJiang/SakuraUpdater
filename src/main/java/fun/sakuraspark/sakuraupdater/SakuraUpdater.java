@@ -1,12 +1,13 @@
 package fun.sakuraspark.sakuraupdater;
 
 import com.mojang.logging.LogUtils;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-import net.minecraftforge.fml.loading.FMLEnvironment;
+
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.javafmlmod.FMLModContainer;
+import net.neoforged.fml.loading.FMLEnvironment;
 
 import org.slf4j.Logger;
 
@@ -21,8 +22,7 @@ public class SakuraUpdater {
     SakuraUpdaterServer serverInstance;
     SakuraUpdaterClient clientInstance;
 
-    public SakuraUpdater() {
-        IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
+    public SakuraUpdater(IEventBus modEventBus, FMLModContainer modContainer) {
         // LOGGER.info("Is debug enabled? {}", LOGGER.isDebugEnabled());
         // Register the commonSetup method for modloading
         // modEventBus.addListener(this::commonSetup);
@@ -33,12 +33,12 @@ public class SakuraUpdater {
         if (FMLEnvironment.dist == Dist.DEDICATED_SERVER) {
             LOGGER.debug("Try run SakuraUpdater Server");
             serverInstance = new SakuraUpdaterServer();
-            MinecraftForge.EVENT_BUS.register(serverInstance);
+            NeoForge.EVENT_BUS.register(serverInstance);
         }
         if (FMLEnvironment.dist == Dist.CLIENT) {
             LOGGER.debug("Try run SakuraUpdater Client");
             clientInstance = new SakuraUpdaterClient();
-            MinecraftForge.EVENT_BUS.register(clientInstance);
+            NeoForge.EVENT_BUS.register(clientInstance);
         }
     }
 

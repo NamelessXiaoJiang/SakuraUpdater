@@ -34,11 +34,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import net.minecraftforge.event.RegisterCommandsEvent;
-import net.minecraftforge.server.ServerLifecycleHooks;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.ModLoadingContext;
-import net.minecraftforge.fml.config.ModConfig;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.ModLoadingContext;
+import net.neoforged.fml.config.ModConfig;
 
 //@Mod.EventBusSubscriber(value = Dist.DEDICATED_SERVER, modid = SakuraUpdater.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class SakuraUpdaterServer {
@@ -54,7 +54,7 @@ public class SakuraUpdaterServer {
     private static final long WATCHDOG_NOTIFY_INTERVAL = 30_000; // 30秒
 
     SakuraUpdaterServer() {
-        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, ServerConfig.SPEC);
+        ModLoadingContext.get().getActiveContainer().registerConfig(ModConfig.Type.COMMON, ServerConfig.SPEC);
         if (!DataConfig.connectToDatabase("config/sakuraupdater-database.db")) {
             throw new IllegalStateException(
                     "Failed to initialize SakuraUpdater database; see dependency/database errors above.");
@@ -187,23 +187,6 @@ public class SakuraUpdaterServer {
                 .then(createDataClearCommand());
     }
 
-    // ----Create the /ssync data repair command----
-    private LiteralArgumentBuilder<CommandSourceStack> createDataRepairCommand() {
-        return literal("repair")
-                .then(argument("version", string())
-                        .suggests(VERSION_SUGGESTIONS)
-                        .executes(context -> {
-                            String version = getString(context, "version");
-                            CommandResult result = ServerCommandsHelper.repairData(version);
-                            if (!result.success) {
-                                sendFailureMessage(context.getSource(), result.message);
-                                return 0;
-                            }
-                            sendSuccessMessage(context.getSource(), result.message);
-                            return 1;
-                        }));
-    }
-
     // ----Create the /ssync data subcommands----
     private LiteralArgumentBuilder<CommandSourceStack> createDataEditCommand() {
         return literal("edit")
@@ -221,6 +204,23 @@ public class SakuraUpdaterServer {
                                     sendSuccessMessage(context.getSource(), result.message);
                                     return 1;
                                 })));
+    }
+
+    // ----Create the /ssync data repair command----
+    private LiteralArgumentBuilder<CommandSourceStack> createDataRepairCommand() {
+        return literal("repair")
+                .then(argument("version", string())
+                        .suggests(VERSION_SUGGESTIONS)
+                        .executes(context -> {
+                            String version = getString(context, "version");
+                            CommandResult result = ServerCommandsHelper.repairData(version);
+                            if (!result.success) {
+                                sendFailureMessage(context.getSource(), result.message);
+                                return 0;
+                            }
+                            sendSuccessMessage(context.getSource(), result.message);
+                            return 1;
+                        }));
     }
 
     // ----Create the /ssync data list command----

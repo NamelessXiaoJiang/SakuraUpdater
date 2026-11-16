@@ -2,7 +2,7 @@ plugins {
     id 'idea'
     id 'java-library'
     id 'maven-publish'
-    id 'net.neoforged.moddev.legacyforge' version '2.0.91'
+    id 'net.neoforged.moddev' version '2.0.105'
 }
 
 tasks.named('wrapper', Wrapper).configure {
@@ -33,15 +33,12 @@ base {
     archivesName = mod_id
 }
 
-// Mojang ships Java 21 to end users in 1.20.1, so mods should target Java 17.
-java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+// Mojang ships Java 21 to end users starting in 1.20.5, so mods should target Java 21.
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
-legacyForge {
-    // Specify the version of MinecraftForge to use.
-    //version = project.minecraft_version + '-' + project.forge_version
-    enable {
-        neoForgeVersion = project.minecraft_version + '-' + project.forge_version
-    }
+neoForge {
+    // Specify the version of NeoForge to use.
+    version = project.neo_version
 
     parchment {
         mappingsVersion = project.parchment_mappings_version
@@ -60,14 +57,14 @@ legacyForge {
             gameDirectory = project.file('run-client')
             //logLevel = org.slf4j.event.Level.DEBUG
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
-            systemProperty 'forge.enabledGameTestNamespaces', project.mod_id
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
         server {
             server()
             //logLevel = org.slf4j.event.Level.DEBUG
             //programArgument '--nogui'
-            systemProperty 'forge.enabledGameTestNamespaces', project.mod_id
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
         // This run config launches GameTestServer and runs all registered gametests, then exits.
@@ -75,7 +72,7 @@ legacyForge {
         // The gametest system is also enabled by default for other run configs under the /test command.
         gameTestServer {
             type = "gameTestServer"
-            systemProperty 'forge.enabledGameTestNamespaces', project.mod_id
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
         data {
@@ -165,16 +162,6 @@ dependencies {
 
 }
 
-// Uncomment the lines below if you wish to configure mixin. The mixin file should be named modid.mixins.json.
-mixin {
-    add sourceSets.main, "${mod_id}.refmap.json"
-    config "${mod_id}.mixins.json"
-}
-
-dependencies {
-    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
-}
-
 // 模组JAR - 用于Forge环境
 jar {
     manifest.attributes([
@@ -189,8 +176,8 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
     var replaceProperties = [
             minecraft_version        : minecraft_version,
             minecraft_version_range  : minecraft_version_range,
-            forge_version            : forge_version,
-            forge_version_range      : forge_version_range,
+            neo_version              : neo_version,
+            neo_version_range        : neo_version_range,
             loader_version_range     : loader_version_range,
             mod_id                   : mod_id,
             mod_name                 : mod_name,
@@ -208,7 +195,7 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
 // this works with both building through Gradle and the IDE.
 sourceSets.main.resources.srcDir generateModMetadata
 // To avoid having to run "generateModMetadata" manually, make it run on every project reload
-legacyForge.ideSyncTask generateModMetadata
+neoForge.ideSyncTask generateModMetadata
 
 // Example configuration to allow publishing using the maven-publish plugin
 publishing {
@@ -233,7 +220,7 @@ tasks.register('dependencyManagerTest', JavaExec) {
     dependsOn tasks.named('testClasses')
     classpath = files(sourceSets.test.output, sourceSets.main.output)
     mainClass = 'fun.sakuraspark.sakuraupdater.PackageManagerTest'
-    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
 }
 tasks.named('check') { dependsOn tasks.named('dependencyManagerTest') }
 
@@ -252,7 +239,7 @@ tasks.register('downloadProgressTest', JavaExec) {
     dependsOn tasks.named('testClasses')
     classpath = files(sourceSets.test.output, sourceSets.main.output) + configurations.downloadProgressTestRuntime
     mainClass = 'fun.sakuraspark.sakuraupdater.FileClientProgressTest'
-    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
 }
 tasks.named('check') { dependsOn tasks.named('downloadProgressTest') }
 
