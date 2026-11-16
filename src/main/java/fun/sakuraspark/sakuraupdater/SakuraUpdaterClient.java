@@ -36,7 +36,9 @@ import static net.minecraft.commands.Commands.*;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -329,14 +331,13 @@ public class SakuraUpdaterClient {
             }
             // mirror需要删除
             if (pathData.model.equals("mirror")) {
+                // 先把清单建成索引，避免为每个本地文件线性扫描整张清单
+                final Map<String, FileData> listedFiles = new HashMap<>();
+                for (FileData fd : pathData.files) {
+                    listedFiles.put(fd.targetPath, fd);
+                }
                 FileUtils.getAllFiles(new File(pathData.targetPath)).forEach(file -> {
-                    FileData fileData = null;
-                    for (FileData fd : pathData.files) {
-                        if (fd.targetPath.equals(file.toString().replace(File.separator, "/"))) { // 判断是否存
-                            fileData = fd;
-                            break;
-                        }
-                    }
+                    FileData fileData = listedFiles.get(file.toString().replace(File.separator, "/")); // 判断是否存
                     if (fileData == null) {
                         LOGGER.warn("File {} not in list\nwill be deleted in mirror mode.", file);
                         integrityCheckResult.getFirst().add(file);
@@ -375,10 +376,14 @@ public class SakuraUpdaterClient {
                 }
             }
             // 需要下载
+            // 先把清单建成索引，避免为每个本地文件线性扫描整张清单
+            final Map<String, File> localFiles = new HashMap<>();
+            for (File localFile : FileUtils.getAllFiles(new File(pathData.targetPath))) {
+                localFiles.put(localFile.toString().replace(File.separator, "/"), localFile);
+            }
             pathData.files.forEach(fileData -> {
-                if (!FileUtils.getAllFiles(new File(pathData.targetPath)).stream()
-                        .anyMatch(file -> file.toString().replace(File.separator, "/").equals(fileData.targetPath)
-                                && fileData.md5.equals(MD5.calculateMD5(file)))) { // 判断是否存在和对比md5
+                File localFile = localFiles.get(fileData.targetPath);
+                if (localFile == null || !fileData.md5.equals(MD5.calculateMD5(localFile))) { // 判断是否存在和对比md5
                     LOGGER.warn("File {} will be downloaded to {}", fileData.sourcePath + ":" + fileData.md5,
                             fileData.targetPath);
                     integrityCheckResult.getSecond().add(fileData);
