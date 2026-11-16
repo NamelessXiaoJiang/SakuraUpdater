@@ -1,6 +1,9 @@
 <div align="center">
 <img src="img/sakuraupdater.png" width="128" alt="SakuraUpdater">
 <h1>SakuraUpdater</h1>
+<a href="https://modrinth.com/mod/sakuraupdater">
+  <img src="https://img.shields.io/badge/dynamic/json?color=1bd96a&label=Modrinth&query=downloads&url=https%3A%2F%2Fapi.modrinth.com%2Fv2%2Fproject%2F1dzlx6Br&suffix=%20downloads&logo=modrinth" alt="Downloads" />
+</a>
 </div>
 
 *([中文版请向下滚动 | Scroll down for Chinese version](#sakuraupdater-中文))*
