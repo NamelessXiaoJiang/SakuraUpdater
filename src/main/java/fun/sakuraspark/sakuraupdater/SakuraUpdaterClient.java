@@ -331,7 +331,7 @@ public class SakuraUpdaterClient {
             }
             // mirror需要删除
             if (pathData.model.equals("mirror")) {
-                // 同理：先把清单建成索引，避免为每个本地文件线性扫描整张清单
+                // 先把清单建成索引，避免为每个本地文件线性扫描整张清单
                 final Map<String, FileData> listedFiles = new HashMap<>();
                 for (FileData fd : pathData.files) {
                     listedFiles.put(fd.targetPath, fd);
@@ -376,9 +376,7 @@ public class SakuraUpdaterClient {
                 }
             }
             // 需要下载
-            // 目录只遍历一次，并把「规范化路径 -> 本地文件」建成索引。
-            // 原实现把 FileUtils.getAllFiles 放在 forEach 里，每条清单记录都会重新遍历整棵目录：
-            // 清单 3978 条 × kubejs 目录 6630 个文件 = 2640 万次磁盘遍历，实测一次检查要 508 秒。
+            // 先把清单建成索引，避免为每个本地文件线性扫描整张清单
             final Map<String, File> localFiles = new HashMap<>();
             for (File localFile : FileUtils.getAllFiles(new File(pathData.targetPath))) {
                 localFiles.put(localFile.toString().replace(File.separator, "/"), localFile);
